@@ -40,7 +40,8 @@ finally:
     client.close()
 ```
 
-An unknown or invalid option raises `octaspace.ConfigurationError`.
+An unknown or invalid option raises `octaspace.ConfigurationError`, a
+subclass of `ValueError`.
 
 ## Options
 
@@ -54,6 +55,7 @@ An unknown or invalid option raises `octaspace.ConfigurationError`.
 | `write_timeout` | `30.0` | `OCTA_WRITE_TIMEOUT` | Seconds to wait while sending a request |
 | `max_retries` | `2` | `OCTA_MAX_RETRIES` | Retries of failed requests that are safe to repeat; `0` turns them off. See [Retries](errors-and-reliability.md#retries) |
 | `retry_interval` / `backoff_factor` | `0.5` / `2.0` | `OCTA_RETRY_INTERVAL` / `OCTA_BACKOFF_FACTOR` | Backoff between retries: `retry_interval × backoff_factor^attempt` seconds |
+| `max_retry_after` | `60.0` | `OCTA_MAX_RETRY_AFTER` | Longest `Retry-After` the SDK waits for; a longer wait raises the error at once |
 | `keep_alive` | `False` | `OCTA_KEEP_ALIVE` | Reuse connections, see [below](#keep-alive-connections) |
 | `pool_size` | `5` | `OCTA_POOL_SIZE` | Connections kept open with `keep_alive` |
 | `max_connections` | `20` | `OCTA_MAX_CONNECTIONS` | Most connections open at the same time |
@@ -82,7 +84,7 @@ with OctaSpaceClient(config=config) as client:
 
 Keyword arguments to `from_env()` override the environment:
 `ClientConfig.from_env(max_retries=0)`. Boolean variables accept `1`, `true`,
-`yes` and `on`.
+`yes` and `on`. An invalid number raises `ConfigurationError`.
 
 ## Shared client
 

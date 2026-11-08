@@ -65,8 +65,8 @@ uuid = response.data["uuid"]
 
 The session is created at once; its container is still being set up. Check
 `is_ready` with [`info()`](#session-details). A rejected request, for example
-for an insufficient balance, raises `octaspace.APIError` with status 400 and
-the reason as its message.
+for an insufficient balance, raises `octaspace.ValidationError` with the
+reason as its message.
 
 ## VPN
 
@@ -208,7 +208,7 @@ client.nodes.update_prices(312, base=25, storage=2, traffic=1)
 Pass one or more of `base`, `storage` and `traffic`, each an integer from 0
 to 10000; see `node_prices` in the
 [API reference](https://api.octa.space/api-docs) for the units. Any other
-field or value raises `APIError` with status 400.
+field or value raises `ValidationError`.
 
 ### Reboot
 
