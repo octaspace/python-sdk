@@ -1,10 +1,36 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to this project are documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] - 2026-04-13
+## [Unreleased]
 
-- Initial Python SDK scaffold for OctaSpace.
+### Changed
+
+- **Breaking:** Python 3.11 or later is required; Python 3.10 is no longer
+  supported.
+
+### Removed
+
+- **Breaking:** the `octaspace-smoke` command and `python -m octaspace`.
+
+## [0.1.0] - 2026-04-14
+
+### Added
+
+- `OctaSpaceClient` with the resources `accounts`, `nodes`, `sessions`,
+  `apps`, `network`, `idle_jobs` and `services` (`mr`, `vpn`, `render` and
+  `session(uuid)`).
+- `APIResponse` with the parsed JSON, raw body, headers and request ID.
+- Error classes for each HTTP status, network errors and timeouts.
+- Automatic retries with exponential backoff and `Retry-After`.
+- Several API hosts with failover (`base_urls`).
+- Keep-alive connection pool, `on_request` / `on_response` hooks and logging.
+- `ClientConfig.from_env()` and a shared client (`octaspace.configure()`,
+  `octaspace.client()`).
+- Models `Account`, `Balance`, `Node` and `Session`.
+
+[Unreleased]: https://github.com/octaspace/python-sdk/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/octaspace/python-sdk/releases/tag/v0.1.0

@@ -26,6 +26,14 @@ class APITimeoutError(NetworkError):
 
 
 class APIError(OctaSpaceError):
+    """Raised for an error response from the API.
+
+    Attributes:
+        status_code: The HTTP status.
+        request_id: The ``X-Request-Id`` header of the response, or ``None``.
+        response: The full ``APIResponse``.
+    """
+
     def __init__(self, message: str | None = None, *, response: APIResponse) -> None:
         self.response = response
         self.status_code = response.status_code
@@ -50,6 +58,12 @@ class ValidationError(APIError):
 
 
 class RateLimitError(APIError):
+    """Raised for HTTP 429 responses.
+
+    Attributes:
+        retry_after: Seconds the API asks you to wait, or ``None``.
+    """
+
     def __init__(self, message: str | None = None, *, response: APIResponse) -> None:
         self.retry_after = response.retry_after
         super().__init__(message, response=response)
@@ -94,6 +108,7 @@ def _message_from_response(response: APIResponse) -> str:
 
 
 def from_response(response: APIResponse) -> APIError:
+    """Return the error class instance that matches the response status."""
     error_type = STATUS_ERRORS.get(response.status_code)
     if error_type is None:
         error_type = ServerError if response.is_server_error else APIError
@@ -101,10 +116,12 @@ def from_response(response: APIResponse) -> APIError:
 
 
 def raise_for_response(response: APIResponse) -> None:
+    """Raise the error that matches the response status."""
     raise from_response(response)
 
 
 def error_context(error: Exception) -> dict[str, Any]:
+    """Return the status, request ID and message of an error as a dict."""
     if isinstance(error, APIError):
         return {
             "status_code": error.status_code,

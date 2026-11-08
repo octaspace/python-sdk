@@ -6,6 +6,8 @@ from typing import Any
 
 @dataclass(frozen=True, slots=True)
 class Session:
+    """A session, built from an item of ``sessions.list().data``."""
+
     uuid: str
     service: str
     app_name: str | None

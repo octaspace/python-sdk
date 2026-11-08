@@ -6,6 +6,8 @@ from typing import Any
 
 @dataclass(frozen=True, slots=True)
 class Account:
+    """An account profile, built from ``accounts.profile().data``."""
+
     account_uuid: str
     email: str
     avatar: str | None
@@ -23,6 +25,8 @@ class Account:
 
 @dataclass(frozen=True, slots=True)
 class Balance:
+    """An account balance, built from ``accounts.balance().data``."""
+
     amount: float
     currency: str
 

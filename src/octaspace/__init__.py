@@ -28,10 +28,19 @@ _shared_client: OctaSpaceClient | None = None
 
 
 def configuration() -> ClientConfig:
+    """Return the global configuration."""
     return _configuration
 
 
 def configure(**overrides: Any) -> ClientConfig:
+    """Update the global configuration and close the shared client.
+
+    Args:
+        **overrides: Any ``ClientConfig`` field.
+
+    Returns:
+        The new global configuration.
+    """
     global _configuration, _shared_client
     _configuration = _configuration.with_overrides(**overrides)
     if _shared_client is not None:
@@ -41,6 +50,7 @@ def configure(**overrides: Any) -> ClientConfig:
 
 
 def reset_configuration() -> ClientConfig:
+    """Close the shared client and restore the default configuration."""
     global _configuration, _shared_client
     if _shared_client is not None:
         _shared_client.close()
@@ -50,6 +60,12 @@ def reset_configuration() -> ClientConfig:
 
 
 def client(api_key: str | None = None, **overrides: Any) -> OctaSpaceClient:
+    """Return the shared client, or a new client when arguments are given.
+
+    Without arguments, returns one client built from the global configuration
+    and reused on every call. With ``api_key`` or other options, returns a new
+    client based on the global configuration; close it yourself.
+    """
     global _shared_client
     if api_key is None and not overrides:
         if _shared_client is None:
@@ -60,6 +76,7 @@ def client(api_key: str | None = None, **overrides: Any) -> OctaSpaceClient:
 
 
 def shutdown_shared_client() -> None:
+    """Close the shared client; the next ``client()`` call creates a new one."""
     global _shared_client
     if _shared_client is not None:
         _shared_client.close()

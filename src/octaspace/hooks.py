@@ -13,12 +13,21 @@ from .response import APIResponse
 
 @dataclass(frozen=True, slots=True)
 class RequestContext:
+    """A request as passed to the ``on_request`` hook.
+
+    Attributes:
+        method: The HTTP method in lower case.
+        path: The URL path.
+        params: The query parameters.
+    """
+
     method: str
     path: str
     params: dict[str, Any]
 
     @classmethod
     def from_httpx(cls, request: httpx.Request) -> RequestContext:
+        """Build a ``RequestContext`` from an ``httpx.Request``."""
         params = dict(parse_qsl(request.url.query.decode("utf-8"), keep_blank_values=True))
         return cls(method=request.method.lower(), path=request.url.path, params=params)
 
@@ -28,6 +37,8 @@ ResponseHook = Callable[[APIResponse], None]
 
 
 class HookDispatcher:
+    """Runs the ``on_request`` / ``on_response`` hooks and the request log."""
+
     def __init__(
         self,
         on_request: RequestHook | None = None,

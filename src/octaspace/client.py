@@ -18,6 +18,23 @@ from .resources import (
 
 
 class OctaSpaceClient:
+    """Client of the OctaSpace API.
+
+    Args:
+        api_key: The API token of your account (Account → Credentials →
+            API Token). Without it, only the calls that need no token work.
+        transport: A custom transport, for example
+            ``octaspace._transport.mock_transport.MockTransport`` in tests.
+        config: Base configuration; ``api_key`` and ``**overrides`` take
+            precedence over it.
+        **overrides: Any ``ClientConfig`` field, such as ``read_timeout``.
+
+    Raises:
+        ConfigurationError: An option is unknown or invalid.
+
+    Use the client as a context manager, or call ``close()`` when done.
+    """
+
     def __init__(
         self,
         api_key: str | None = None,
@@ -38,15 +55,19 @@ class OctaSpaceClient:
 
     @property
     def config(self) -> ClientConfig:
+        """The configuration of this client."""
         return self._config
 
     def close(self) -> None:
+        """Close the client's connections."""
         self._transport.close()
 
     def shutdown(self) -> None:
+        """Close the client's connections; same as ``close()``."""
         self.close()
 
     def transport_stats(self) -> dict[str, Any]:
+        """Return the connection mode, pool limits and API hosts in use."""
         return self._transport.transport_stats()
 
     def __enter__(self) -> OctaSpaceClient:
