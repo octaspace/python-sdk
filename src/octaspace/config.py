@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass, replace
-from typing import Any
+from dataclasses import dataclass, field, replace
+from typing import Any, TypeVar
 
 import httpx
 
 from .__about__ import __version__
+from .errors import ConfigurationError
 from .hooks import RequestHook, ResponseHook
+
+_Number = TypeVar("_Number", int, float)
 
 
 def _env_bool(value: str | None, default: bool) -> bool:
@@ -26,10 +29,10 @@ class ClientConfig:
     for the meaning and default of each field.
 
     Raises:
-        ValueError: A field has an invalid value.
+        ConfigurationError: A field has an invalid value.
     """
 
-    api_key: str | None = None
+    api_key: str | None = field(default=None, repr=False)
     base_url: str = "https://api.octa.space"
     base_urls: list[str] | None = None
     keep_alive: bool = False
@@ -43,6 +46,7 @@ class ClientConfig:
     max_retries: int = 2
     retry_interval: float = 0.5
     backoff_factor: float = 2.0
+    max_retry_after: float = 60.0
     ssl_verify: bool = True
     on_request: RequestHook | None = None
     on_response: ResponseHook | None = None
@@ -52,12 +56,12 @@ class ClientConfig:
     def __post_init__(self) -> None:
         self.base_url = self.base_url.strip()
         if not self.base_url:
-            raise ValueError("base_url must be a non-empty string")
+            raise ConfigurationError("base_url must be a non-empty string")
 
         if self.base_urls is not None:
             cleaned_urls = [str(url).strip() for url in self.base_urls if str(url).strip()]
             if not cleaned_urls:
-                raise ValueError("base_urls must contain at least one non-empty URL")
+                raise ConfigurationError("base_urls must contain at least one non-empty URL")
             self.base_urls = cleaned_urls
 
         _validate_non_negative_int("pool_size", self.pool_size)
@@ -70,6 +74,7 @@ class ClientConfig:
         _validate_non_negative_int("max_retries", self.max_retries)
         _validate_non_negative_float("retry_interval", self.retry_interval)
         _validate_positive_float("backoff_factor", self.backoff_factor)
+        _validate_non_negative_float("max_retry_after", self.max_retry_after)
 
     @property
     def urls(self) -> list[str]:
@@ -106,12 +111,12 @@ class ClientConfig:
         """Return a copy with the given fields replaced.
 
         Raises:
-            ValueError: A field is unknown or invalid.
+            ConfigurationError: A field is unknown or invalid.
         """
         try:
             return replace(self, **overrides)
         except TypeError as exc:
-            raise ValueError(str(exc)) from exc
+            raise ConfigurationError(str(exc)) from exc
 
     @classmethod
     def from_env(cls, **overrides: Any) -> ClientConfig:
@@ -123,6 +128,9 @@ class ClientConfig:
 
         Args:
             **overrides: Fields that take precedence over the environment.
+
+        Raises:
+            ConfigurationError: A variable has an invalid value.
         """
         defaults = cls()
         base_urls = os.getenv("OCTA_BASE_URLS")
@@ -133,16 +141,17 @@ class ClientConfig:
             base_url=os.getenv("OCTA_BASE_URL", defaults.base_url),
             base_urls=[item.strip() for item in base_urls.split(",")] if base_urls else None,
             keep_alive=_env_bool(os.getenv("OCTA_KEEP_ALIVE"), defaults.keep_alive),
-            pool_size=int(os.getenv("OCTA_POOL_SIZE", defaults.pool_size)),
-            max_connections=int(os.getenv("OCTA_MAX_CONNECTIONS", defaults.max_connections)),
-            pool_timeout=float(os.getenv("OCTA_POOL_TIMEOUT", defaults.pool_timeout)),
-            idle_timeout=float(os.getenv("OCTA_IDLE_TIMEOUT", defaults.idle_timeout)),
-            open_timeout=float(os.getenv("OCTA_OPEN_TIMEOUT", defaults.open_timeout)),
-            read_timeout=float(os.getenv("OCTA_READ_TIMEOUT", defaults.read_timeout)),
-            write_timeout=float(os.getenv("OCTA_WRITE_TIMEOUT", defaults.write_timeout)),
-            max_retries=int(os.getenv("OCTA_MAX_RETRIES", defaults.max_retries)),
-            retry_interval=float(os.getenv("OCTA_RETRY_INTERVAL", defaults.retry_interval)),
-            backoff_factor=float(os.getenv("OCTA_BACKOFF_FACTOR", defaults.backoff_factor)),
+            pool_size=_env_number(int, "OCTA_POOL_SIZE", defaults.pool_size),
+            max_connections=_env_number(int, "OCTA_MAX_CONNECTIONS", defaults.max_connections),
+            pool_timeout=_env_number(float, "OCTA_POOL_TIMEOUT", defaults.pool_timeout),
+            idle_timeout=_env_number(float, "OCTA_IDLE_TIMEOUT", defaults.idle_timeout),
+            open_timeout=_env_number(float, "OCTA_OPEN_TIMEOUT", defaults.open_timeout),
+            read_timeout=_env_number(float, "OCTA_READ_TIMEOUT", defaults.read_timeout),
+            write_timeout=_env_number(float, "OCTA_WRITE_TIMEOUT", defaults.write_timeout),
+            max_retries=_env_number(int, "OCTA_MAX_RETRIES", defaults.max_retries),
+            retry_interval=_env_number(float, "OCTA_RETRY_INTERVAL", defaults.retry_interval),
+            backoff_factor=_env_number(float, "OCTA_BACKOFF_FACTOR", defaults.backoff_factor),
+            max_retry_after=_env_number(float, "OCTA_MAX_RETRY_AFTER", defaults.max_retry_after),
             ssl_verify=_env_bool(os.getenv("OCTA_SSL_VERIFY"), defaults.ssl_verify),
             logger=logger,
             user_agent=os.getenv("OCTA_USER_AGENT"),
@@ -150,21 +159,31 @@ class ClientConfig:
         return config.with_overrides(**overrides) if overrides else config
 
 
+def _env_number(kind: type[_Number], name: str, default: _Number) -> _Number:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return kind(value)
+    except ValueError:
+        raise ConfigurationError(f"{name} must be a number, got {value!r}") from None
+
+
 def _validate_non_negative_int(name: str, value: int) -> None:
     if value < 0:
-        raise ValueError(f"{name} must be >= 0")
+        raise ConfigurationError(f"{name} must be >= 0")
 
 
 def _validate_positive_int(name: str, value: int) -> None:
     if value <= 0:
-        raise ValueError(f"{name} must be > 0")
+        raise ConfigurationError(f"{name} must be > 0")
 
 
 def _validate_non_negative_float(name: str, value: float) -> None:
     if value < 0:
-        raise ValueError(f"{name} must be >= 0")
+        raise ConfigurationError(f"{name} must be >= 0")
 
 
 def _validate_positive_float(name: str, value: float) -> None:
     if value <= 0:
-        raise ValueError(f"{name} must be > 0")
+        raise ConfigurationError(f"{name} must be > 0")

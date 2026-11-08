@@ -47,7 +47,8 @@ class MachineRentalResource(Resource):
     ) -> APIResponse:
         """Start a machine rental session.
 
-        ``POST /services/mr``. Never retried.
+        ``POST /services/mr``. Retried only when the connection could not be
+        established.
 
         Args:
             node_id: The machine to rent.
@@ -64,8 +65,8 @@ class MachineRentalResource(Resource):
             The response; ``data["uuid"]`` is the session UUID.
 
         Raises:
-            APIError: Status 400 when the session cannot be started, for
-                example for an insufficient balance.
+            ValidationError: The session cannot be started, for example for
+                an insufficient balance.
         """
         payload: MachineRentalCreatePayload = {
             "node_id": node_id,

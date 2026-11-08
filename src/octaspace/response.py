@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import httpx
@@ -51,14 +54,22 @@ class APIResponse:
 
     @property
     def retry_after(self) -> int | None:
-        """The ``Retry-After`` header in seconds, or ``None``."""
+        """The ``Retry-After`` header in whole seconds, or ``None``.
+
+        Accepts both forms of the header: a number of seconds or an HTTP date.
+        """
         value = self.headers.get("retry-after")
         if value is None:
             return None
-        try:
+        if value.strip().isdigit():
             return int(value)
-        except ValueError:
+        try:
+            when = parsedate_to_datetime(value)
+        except (TypeError, ValueError):
             return None
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=UTC)
+        return max(math.ceil((when - datetime.now(UTC)).total_seconds()), 0)
 
     @property
     def is_success(self) -> bool:

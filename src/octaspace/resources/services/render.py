@@ -19,7 +19,8 @@ class RenderResource(Resource):
     def create(self, **attrs: Any) -> APIResponse:
         """Start a render session.
 
-        ``POST /services/render``. Never retried.
+        ``POST /services/render``. Retried only when the connection
+        could not be established.
 
         Args:
             **attrs: The request body: ``node_id`` and ``disk_size`` (GB),
