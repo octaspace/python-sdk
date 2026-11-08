@@ -19,6 +19,16 @@ def _env_bool(value: str | None, default: bool) -> bool:
 
 @dataclass(slots=True)
 class ClientConfig:
+    """Settings of an ``OctaSpaceClient``.
+
+    Every field can be passed to ``OctaSpaceClient`` as a keyword argument.
+    Timeouts and intervals are in seconds. See the client configuration guide
+    for the meaning and default of each field.
+
+    Raises:
+        ValueError: A field has an invalid value.
+    """
+
     api_key: str | None = None
     base_url: str = "https://api.octa.space"
     base_urls: list[str] | None = None
@@ -63,15 +73,18 @@ class ClientConfig:
 
     @property
     def urls(self) -> list[str]:
+        """The API hosts in use: ``base_urls`` if set, otherwise ``[base_url]``."""
         return list(self.base_urls) if self.base_urls is not None else [self.base_url]
 
     @property
     def resolved_user_agent(self) -> str:
+        """The ``User-Agent`` header the client sends."""
         if self.user_agent:
             return self.user_agent
         return f"octaspace-python/{__version__}"
 
     def build_timeout(self) -> httpx.Timeout:
+        """Return the timeouts as an ``httpx.Timeout``."""
         return httpx.Timeout(
             connect=self.open_timeout,
             read=self.read_timeout,
@@ -80,6 +93,7 @@ class ClientConfig:
         )
 
     def build_limits(self) -> httpx.Limits:
+        """Return the connection pool limits as an ``httpx.Limits``."""
         keepalive_connections = self.pool_size if self.keep_alive else 0
         keepalive_expiry = self.idle_timeout if self.keep_alive else None
         return httpx.Limits(
@@ -89,6 +103,11 @@ class ClientConfig:
         )
 
     def with_overrides(self, **overrides: Any) -> ClientConfig:
+        """Return a copy with the given fields replaced.
+
+        Raises:
+            ValueError: A field is unknown or invalid.
+        """
         try:
             return replace(self, **overrides)
         except TypeError as exc:
@@ -96,6 +115,15 @@ class ClientConfig:
 
     @classmethod
     def from_env(cls, **overrides: Any) -> ClientConfig:
+        """Build a configuration from ``OCTA_*`` environment variables.
+
+        Reads ``OCTA_API_KEY``, ``OCTA_BASE_URL``, ``OCTA_BASE_URLS``
+        (comma-separated) and one variable per option, for example
+        ``OCTA_READ_TIMEOUT``. ``OCTA_LOGGER`` is the name of a logger.
+
+        Args:
+            **overrides: Fields that take precedence over the environment.
+        """
         defaults = cls()
         base_urls = os.getenv("OCTA_BASE_URLS")
         logger_name = os.getenv("OCTA_LOGGER")

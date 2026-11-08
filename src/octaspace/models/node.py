@@ -6,6 +6,8 @@ from typing import Any
 
 @dataclass(frozen=True, slots=True)
 class Node:
+    """A node, built from a node of ``nodes.list()`` or ``nodes.find()``."""
+
     id: int
     ip: str
     state: str
@@ -26,8 +28,10 @@ class Node:
 
     @property
     def online(self) -> bool:
+        """Whether the node state is ``online``."""
         return self.state == "online"
 
     @property
     def offline(self) -> bool:
+        """Whether the node is not online."""
         return not self.online

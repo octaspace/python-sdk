@@ -9,6 +9,14 @@ from .vpn import VpnResource
 
 
 class ServicesResource(Resource):
+    """Services you rent: machines, VPN gateways, render nodes and their sessions.
+
+    Attributes:
+        mr: Machine rental.
+        vpn: VPN gateways.
+        render: Render nodes.
+    """
+
     def __init__(self, transport: BaseTransport) -> None:
         super().__init__(transport)
         self.mr = MachineRentalResource(transport)
@@ -16,6 +24,12 @@ class ServicesResource(Resource):
         self.render = RenderResource(transport)
 
     def session(self, uuid: str) -> SessionProxy:
+        """Return the operations of one session.
+
+        Args:
+            uuid: The session UUID, as returned by ``create()`` or
+                ``sessions.list()``.
+        """
         return SessionProxy(self._transport, uuid)
 
 

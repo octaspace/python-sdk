@@ -8,6 +8,8 @@ from ..response import APIResponse
 
 
 class Resource:
+    """Base class of the resources; sends requests through the client's transport."""
+
     def __init__(self, transport: BaseTransport) -> None:
         self._transport = transport
 

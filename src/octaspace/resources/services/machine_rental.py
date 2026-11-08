@@ -23,7 +23,13 @@ class MachineRentalCreatePayload(_MachineRentalRequiredPayload, total=False):
 
 
 class MachineRentalResource(Resource):
+    """Machines for rent, to run your own container."""
+
     def list(self, **params: Any) -> APIResponse:
+        """List the machines available for rent.
+
+        ``GET /services/mr``. Works without an API token.
+        """
         return self.get("/services/mr", params=params or None)
 
     def create(
@@ -39,6 +45,28 @@ class MachineRentalResource(Resource):
         start_command: str = "",
         entrypoint: str = "",
     ) -> APIResponse:
+        """Start a machine rental session.
+
+        ``POST /services/mr``. Never retried.
+
+        Args:
+            node_id: The machine to rent.
+            disk_size: Disk to allocate, in GB.
+            image: The container image, for example ``"ubuntu:24.04"``.
+            app: UUID of an application from ``apps.list()``.
+            envs: Environment variables of the container.
+            ports: TCP/UDP ports to expose.
+            http_ports: HTTP ports to expose as HTTPS links.
+            start_command: Shell commands to run after the container starts.
+            entrypoint: The container entrypoint.
+
+        Returns:
+            The response; ``data["uuid"]`` is the session UUID.
+
+        Raises:
+            APIError: Status 400 when the session cannot be started, for
+                example for an insufficient balance.
+        """
         payload: MachineRentalCreatePayload = {
             "node_id": node_id,
             "disk_size": disk_size,
@@ -50,7 +78,6 @@ class MachineRentalResource(Resource):
             "start_command": start_command,
             "entrypoint": entrypoint,
         }
-        # The OctaSpace API expects MR creation as a single-item array with id=0.
-        # This mirrors the Ruby gem and the live payload preset used by the JS SDK.
+        # The endpoint takes a list of sessions to start; this starts one.
         item = {"id": 0, **payload}
         return self.post("/services/mr", body=[item])

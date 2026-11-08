@@ -8,6 +8,16 @@ import httpx
 
 @dataclass(frozen=True, slots=True)
 class APIResponse:
+    """A response of the API.
+
+    Attributes:
+        status_code: The HTTP status.
+        headers: The response headers.
+        body: The raw body.
+        data: The parsed JSON body, or ``None`` if the body is empty or not JSON.
+        raw_response: The underlying ``httpx.Response``.
+    """
+
     status_code: int
     headers: httpx.Headers
     body: bytes
@@ -16,6 +26,7 @@ class APIResponse:
 
     @classmethod
     def from_httpx(cls, response: httpx.Response) -> APIResponse:
+        """Build an ``APIResponse`` from an ``httpx.Response``."""
         body = response.content
         data: Any = None
         content_type = response.headers.get("content-type", "")
@@ -34,11 +45,13 @@ class APIResponse:
 
     @property
     def request_id(self) -> str | None:
+        """The ``X-Request-Id`` header, or ``None``."""
         value = self.headers.get("x-request-id")
         return str(value) if value is not None else None
 
     @property
     def retry_after(self) -> int | None:
+        """The ``Retry-After`` header in seconds, or ``None``."""
         value = self.headers.get("retry-after")
         if value is None:
             return None
@@ -49,21 +62,26 @@ class APIResponse:
 
     @property
     def is_success(self) -> bool:
+        """Whether the status is 2xx."""
         return 200 <= self.status_code <= 299
 
     @property
     def is_client_error(self) -> bool:
+        """Whether the status is 4xx."""
         return 400 <= self.status_code <= 499
 
     @property
     def is_server_error(self) -> bool:
+        """Whether the status is 5xx."""
         return 500 <= self.status_code <= 599
 
     @property
     def is_error(self) -> bool:
+        """Whether the status is 4xx or 5xx."""
         return self.is_client_error or self.is_server_error
 
     def raise_for_status(self) -> None:
+        """Raise the matching ``APIError`` if the status is 4xx or 5xx."""
         if self.is_error:
             from .errors import raise_for_response
 
