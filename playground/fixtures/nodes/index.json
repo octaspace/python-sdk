@@ -1,1 +1,0 @@
-[{"id":1,"ip":"1.2.3.4","state":"online","location":{"country":"UA"},"prices":{"gpu_hour":0.5},"system":{"gpu":"A100"}},{"id":2,"ip":"5.6.7.8","state":"offline","location":{"country":"PL"},"prices":{"gpu_hour":0.3},"system":{"gpu":"RTX 4090"}}]
