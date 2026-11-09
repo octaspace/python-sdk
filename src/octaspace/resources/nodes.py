@@ -46,7 +46,8 @@ class NodesResource(Resource):
     def update_prices(self, node_id: int | str, **prices: Any) -> APIResponse:
         """Set the prices of a node.
 
-        ``PATCH /nodes/{node_id}/prices``. Never retried.
+        ``PATCH /nodes/{node_id}/prices``. Retried only when the connection
+        could not be established.
 
         Args:
             node_id: Your node.
@@ -54,7 +55,7 @@ class NodesResource(Resource):
                 an integer from 0 to 10000.
 
         Raises:
-            APIError: Status 400 for an unknown field or a value out of range.
+            ValidationError: An unknown field or a value out of range.
         """
         return self.patch(f"/nodes/{self.encode(node_id)}/prices", body=prices)
 

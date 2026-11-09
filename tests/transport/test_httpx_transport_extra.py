@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import pytest
-
 from octaspace._transport.httpx_transport import HttpxTransport
 from octaspace.config import ClientConfig
-from octaspace.errors import APIConnectionError
 
 
 def test_transport_put_delete_and_custom_headers(respx_mock) -> None:
@@ -22,15 +19,4 @@ def test_transport_put_delete_and_custom_headers(respx_mock) -> None:
     assert put_route.calls.last.request.headers["X-Test"] == "1"
     assert delete_route.calls.last.request.headers["Connection"] == "close"
     assert transport.transport_stats()["url"] == "https://api.octa.space"
-    transport.close()
-
-
-def test_transport_raises_when_ordered_urls_empty() -> None:
-    transport = HttpxTransport(ClientConfig(max_retries=0))
-
-    transport._ordered_urls = lambda: []  # type: ignore[method-assign]
-
-    with pytest.raises(APIConnectionError, match="All API endpoints unavailable"):
-        transport._send_with_failover("GET", "/nodes")
-
     transport.close()

@@ -5,7 +5,6 @@ from typing import Any
 from ._transport.base import BaseTransport
 from ._transport.httpx_transport import HttpxTransport
 from .config import ClientConfig
-from .errors import ConfigurationError
 from .resources import (
     AccountsResource,
     AppsResource,
@@ -44,7 +43,7 @@ class OctaSpaceClient:
         **overrides: Any,
     ) -> None:
         self._config = self._build_config(api_key, config, overrides)
-        self._transport = transport or HttpxTransport(self._config)
+        self._transport = transport if transport is not None else HttpxTransport(self._config)
         self.accounts = AccountsResource(self._transport)
         self.nodes = NodesResource(self._transport)
         self.sessions = SessionsResource(self._transport)
@@ -83,10 +82,7 @@ class OctaSpaceClient:
         config: ClientConfig | None,
         overrides: dict[str, Any],
     ) -> ClientConfig:
-        base = config.with_overrides() if config is not None else ClientConfig()
-        try:
-            if api_key is not None:
-                base = base.with_overrides(api_key=api_key)
-            return base.with_overrides(**overrides) if overrides else base
-        except ValueError as exc:
-            raise ConfigurationError(str(exc)) from exc
+        base = config if config is not None else ClientConfig()
+        if api_key is not None:
+            overrides = {**overrides, "api_key": api_key}
+        return base.with_overrides(**overrides)

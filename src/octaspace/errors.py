@@ -9,7 +9,7 @@ class OctaSpaceError(Exception):
     """Base class for all SDK exceptions."""
 
 
-class ConfigurationError(OctaSpaceError):
+class ConfigurationError(OctaSpaceError, ValueError):
     """Raised when the client is configured incorrectly."""
 
 
@@ -54,7 +54,11 @@ class NotFoundError(APIError):
 
 
 class ValidationError(APIError):
-    """Raised for HTTP 422 responses."""
+    """Raised for HTTP 400 and 422 responses: the request was rejected."""
+
+
+class ConflictError(APIError):
+    """Raised for HTTP 409 responses."""
 
 
 class RateLimitError(APIError):
@@ -86,9 +90,11 @@ class GatewayTimeoutError(ServerError):
 
 
 STATUS_ERRORS: dict[int, type[APIError]] = {
+    400: ValidationError,
     401: AuthenticationError,
     403: APIPermissionError,
     404: NotFoundError,
+    409: ConflictError,
     422: ValidationError,
     429: RateLimitError,
     502: BadGatewayError,

@@ -37,7 +37,8 @@ class SessionProxy(Resource):
     def stop(self, **params: Any) -> APIResponse:
         """Stop the session.
 
-        ``POST /services/{uuid}/stop``. Never retried.
+        ``POST /services/{uuid}/stop``. Retried only when the connection could
+        not be established.
 
         Args:
             **params: Optional ``score``, your integer rating of the session.

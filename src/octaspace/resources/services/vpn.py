@@ -19,7 +19,8 @@ class VpnResource(Resource):
     def create(self, **attrs: Any) -> APIResponse:
         """Start a VPN session.
 
-        ``POST /services/vpn``. Never retried.
+        ``POST /services/vpn``. Retried only when the connection
+        could not be established.
 
         Args:
             **attrs: The request body: ``node_id`` (required), ``subkind`` (the

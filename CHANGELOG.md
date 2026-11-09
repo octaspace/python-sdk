@@ -7,7 +7,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- `ConflictError` for HTTP 409.
+- The `max_retry_after` option (`OCTA_MAX_RETRY_AFTER`): the longest
+  `Retry-After` the client waits for, 60 seconds by default.
+- `Retry-After` given as an HTTP date.
+
 ### Changed
+
+- HTTP 400 raises `ValidationError` instead of `APIError`.
+- GET, PUT and DELETE requests are retried after connection errors and
+  timeouts, not only after error responses.
+- `ConfigurationError` is also a `ValueError`; invalid `OCTA_*` numbers raise
+  it.
+- Any transport failure raises `APIConnectionError` or `APITimeoutError`
+  instead of an `httpx` exception.
 
 - **Breaking:** Python 3.11 or later is required; Python 3.10 is no longer
   supported.
@@ -15,6 +30,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 ### Removed
 
 - **Breaking:** the `octaspace-smoke` command and `python -m octaspace`.
+
+### Fixed
+
+- With several API hosts, a request that changes something (starting or
+  stopping a session, setting prices) is no longer sent to another host after
+  a timeout, so that it cannot run twice.
+- The API token no longer appears in `repr()` of `ClientConfig`.
 
 ## [0.1.0] - 2026-04-14
 
