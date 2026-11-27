@@ -6,8 +6,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/octaspace/python-sdk/blob/main/LICENSE)
 
 The official Python library for the [OctaSpace](https://octa.space) API. Rent
-machines, VPN gateways and render nodes, manage your sessions and the nodes you
-host, and read network statistics from Python code.
+compute machines, render nodes and VPN, manage sessions and the nodes you host,
+and read GPU market statistics from Python code.
 
 **Contents:** [Installation](#installation) · [Quick start](#quick-start) ·
 [Authentication](#authentication) · [Handling errors](#handling-errors) ·
@@ -31,49 +31,53 @@ Requires Python 3.11 or later. The only runtime dependency is
 
 ## Quick start
 
-1. [Copy your API token](#authentication) and export it:
+1. [Create an API key](#authentication) and export it:
 
    ```bash
-   export OCTA_API_KEY="your-api-token"
+   export OCTA_API_KEY="octa_ak_..."
    ```
 
-2. Run this program:
+2. Save this program as `quickstart.py` and run it with `python quickstart.py`:
 
    ```python
    import os
 
-   from octaspace import AuthenticationError, OctaSpaceClient
+   from octaspace import APIError, OctaSpaceClient, format_usd
 
    with OctaSpaceClient(api_key=os.environ["OCTA_API_KEY"]) as client:
        try:
-           balance = client.accounts.balance().data["balance"]
-           print(f"Balance: {balance / 10**18:.6f} OCTA")
+           balance = client.accounts.balance()
+           print("Balance:", format_usd(balance["balance"]))  # Balance: $12.500000
 
-           for machine in client.services.mr.list().data:
-               gpus = ", ".join(gpu["model"] for gpu in machine.get("gpus", []))
-               print(machine["node_id"], machine["country"], gpus or "no GPU")
-       except AuthenticationError:
-           raise SystemExit("The API token is missing, wrong or regenerated.") from None
+           for machine in client.compute.list():
+               price = format_usd(machine["base_price"])
+               print(machine["node_number"], machine["city"], price, "per hour")
+       except APIError as exc:
+           raise SystemExit(f"{exc.status_code}: {exc}") from None
    ```
 
-Every method returns an `APIResponse`; the parsed JSON is in `.data`. Create
-one client, reuse it, and close it when you are done (the `with` block does
-that for you).
+Methods return the API's JSON as plain `dict` and `list` objects, typed for
+your editor and type checker. Create one client, reuse it, and close it when you
+are done (the `with` block does that for you).
 
 ## Authentication
 
-The SDK authenticates with the **API token** of your OctaSpace account. You
-find it in the OctaSpace dashboard:
+The SDK authenticates with an **API key** of your OctaSpace account. You create
+and delete API keys in the OctaSpace dashboard:
 
-1. Sign in to the [OctaSpace dashboard](https://cube.octa.space).
+1. Sign in to the [OctaSpace dashboard](https://console.octa.space).
 2. In the sidebar, open **Account → Credentials**.
-3. Copy the value of the **API Token** field.
+3. In the **API Keys** section, click **New key**.
+4. Enter a **Label** that tells you where the key is used, for example
+   `billing-service`, and click **Create key**.
+5. Copy the key. It starts with `octa_ak_`.
 
-Your account has one API token. It authenticates API requests to manage your
-account programmatically.
+> **Important:** The key is shown in full only once, right after you create it.
+> Copy it before you close the dialog. If you lose it, delete it and create a
+> new one.
 
-Pass the token as `api_key`. The SDK sends it in the `Authorization: <token>`
-header.
+Pass the key as `api_key`, for example from the `OCTA_API_KEY` environment
+variable. The SDK sends it in the `Authorization: Bearer <key>` header.
 
 ```python
 import os
@@ -83,74 +87,75 @@ from octaspace import OctaSpaceClient
 client = OctaSpaceClient(api_key=os.environ["OCTA_API_KEY"])
 ```
 
-> **Important:** Regenerating the token (the refresh button next to
-> **API Token**) invalidates the previous one at once, for every program that
-> uses it. Update the token everywhere after you regenerate it.
+> **Warning:** An API key acts on behalf of your account: it can start sessions
+> that are charged to your balance. Keep it out of source code and version
+> control. If a key leaks, delete it under **Account → Credentials → API Keys**;
+> every program that uses it stops working at once.
 
-> **Warning:** The API token acts on behalf of your account: it can start
-> sessions that are charged to your balance. Keep it out of source code and
-> version control. If it leaks, regenerate it under **Account → Credentials**.
+The **API Keys** list shows each key's label, its first characters and when it
+was last used. Use a separate key for each program or machine, so that you can
+delete one without affecting the others. The number of keys per account is
+limited; the counter next to **API Keys** shows how many you have.
 
 ### Calls without an API key
 
-These methods also work without a token. Create the client without `api_key`
-to use them anonymously:
+These methods also work without an API key. Create the client without
+`api_key` to use them anonymously:
 
-| Method | Without a token |
+| Method | Without a key |
 | --- | --- |
-| `network.info()` | Works |
-| `apps.list()` | Works |
-| `services.mr.list()` | Works |
+| `network.info()`, `network.history()` | Same result |
+| `stats.gpu_current()`, `stats.gpu_history()`, `stats.gpu_locations()`, `stats.mining()` | Same result |
+| `compute.list()`, `render.list()`, `vpn.list()` | Refreshed about once an hour instead of every 10 seconds |
+| `compute.apps()` | Official apps only, without your own |
 
-Every other method needs a token. Without one, the API rejects the call,
-usually with `AuthenticationError`.
+Every other method requires an API key. Without one it raises an
+`AuthenticationError` before the request is sent.
 
 ## Handling errors
 
-Every error the SDK raises is an `octaspace.OctaSpaceError`. Catch the specific
-class you can handle:
+Every error the SDK raises is an `octaspace.OctaSpaceError`. Errors returned by
+the API are subclasses of `APIError`; catch the ones you can handle:
 
 ```python
-from octaspace import APIError, AuthenticationError, NotFoundError, RateLimitError
+from octaspace import AuthenticationError, RateLimitError, ValidationError
 
 try:
-    client.services.session("96e33710-ec12-11ed-8588-fa163e49e8aa").info()
+    client.compute.start("7KQ4-M2XD-4", "ubuntu:24.04")
 except AuthenticationError:
-    ...  # the API token is missing, wrong or regenerated
-except NotFoundError:
-    ...  # unknown session
+    ...  # the API key is missing, wrong or deleted
+except ValidationError as exc:
+    print(exc)  # the request was rejected, for example: Insufficient balance
 except RateLimitError as exc:
     ...  # too many requests; wait exc.retry_after seconds
-except APIError as exc:
-    print(exc.status_code, exc)  # any other error response, with the API's message
 ```
 
-See [Errors and reliability](https://github.com/octaspace/python-sdk/blob/main/docs/errors-and-reliability.md).
+See [Errors, rate limits and retries](https://github.com/octaspace/python-sdk/blob/main/docs/errors-and-reliability.md).
 
 ## API overview
 
 | Resource | Dashboard section | Operations | Guide |
 | --- | --- | --- | --- |
-| `client.services.mr` | Marketplace → Compute | List machines, start a session | [Machine rental](https://github.com/octaspace/python-sdk/blob/main/docs/resources.md#machine-rental) |
-| `client.services.vpn` | Marketplace → VPN | List gateways, start a session | [VPN](https://github.com/octaspace/python-sdk/blob/main/docs/resources.md#vpn) |
-| `client.services.render` | Render → Launch Nodes | List render nodes, start a session | [Render](https://github.com/octaspace/python-sdk/blob/main/docs/resources.md#render) |
-| `client.sessions`, `client.services.session(uuid)` | Marketplace → Sessions | List, info, logs, stop | [Sessions](https://github.com/octaspace/python-sdk/blob/main/docs/resources.md#sessions) |
-| `client.apps` | Marketplace → Applications | List applications | [Applications](https://github.com/octaspace/python-sdk/blob/main/docs/resources.md#applications) |
-| `client.nodes` | Hosting → Nodes | Your nodes, ident, logs, prices, reboot | [Nodes](https://github.com/octaspace/python-sdk/blob/main/docs/resources.md#nodes) |
-| `client.idle_jobs` | Hosting → Idle Jobs | Job details and logs | [Idle jobs](https://github.com/octaspace/python-sdk/blob/main/docs/resources.md#idle-jobs) |
-| `client.accounts` | Account → Profile, Account → Billing | Profile, balance, deposit wallet | [Accounts](https://github.com/octaspace/python-sdk/blob/main/docs/resources.md#accounts) |
-| `client.network` | — | Network and market statistics | [Network](https://github.com/octaspace/python-sdk/blob/main/docs/resources.md#network) |
+| `client.compute` | Marketplace → Compute, Applications | List machines and apps, start, batch start, restart | [Compute](https://github.com/octaspace/python-sdk/blob/main/docs/resources.md#compute) |
+| `client.render` | Render → Launch Nodes | List render nodes, start, batch start | [Render](https://github.com/octaspace/python-sdk/blob/main/docs/resources.md#render) |
+| `client.vpn` | Marketplace → VPN | List VPN nodes, start | [VPN](https://github.com/octaspace/python-sdk/blob/main/docs/resources.md#vpn) |
+| `client.sessions` | Marketplace → Sessions, Render → Render Nodes | List, get, logs, stop, wait until ready or stopped | [Sessions](https://github.com/octaspace/python-sdk/blob/main/docs/sessions.md) |
+| `client.hosting` | Hosting → Nodes | Your nodes, one node, set prices, maintenance | [Hosting](https://github.com/octaspace/python-sdk/blob/main/docs/resources.md#hosting) |
+| `client.accounts` | Account → Billing | Balance | [Accounts](https://github.com/octaspace/python-sdk/blob/main/docs/resources.md#accounts) |
+| `client.network` | — | Platform statistics now and over time | [Network](https://github.com/octaspace/python-sdk/blob/main/docs/resources.md#network) |
+| `client.stats` | — | GPU market: current, history, locations; mining | [Stats](https://github.com/octaspace/python-sdk/blob/main/docs/resources.md#stats) |
 
-The fields of every response are described in the
-[OctaSpace API reference](https://api.octa.space/api-docs).
+Every class and method has a docstring, and the package ships type hints
+(`py.typed`).
 
 ## Documentation
 
 | Guide | Covers |
 | --- | --- |
-| [Client configuration](https://github.com/octaspace/python-sdk/blob/main/docs/getting-started.md) | Options and defaults, environment variables, shared client, keep-alive, hooks and logging |
-| [Resources](https://github.com/octaspace/python-sdk/blob/main/docs/resources.md) | Every method, with an example |
-| [Errors and reliability](https://github.com/octaspace/python-sdk/blob/main/docs/errors-and-reliability.md) | Error classes, retries, several API hosts |
+| [Client configuration](https://github.com/octaspace/python-sdk/blob/main/docs/getting-started.md) | Options and defaults, environment variables, shared client, timeouts, keep-alive, hooks and logging |
+| [Resources](https://github.com/octaspace/python-sdk/blob/main/docs/resources.md) | Compute, render, VPN, hosting, balance, network and GPU statistics |
+| [Sessions](https://github.com/octaspace/python-sdk/blob/main/docs/sessions.md) | Waiting until ready, connecting, logs, stopping |
+| [Errors, rate limits and retries](https://github.com/octaspace/python-sdk/blob/main/docs/errors-and-reliability.md) | Error classes, limits, automatic retries, several API hosts |
 | [Changelog](https://github.com/octaspace/python-sdk/blob/main/CHANGELOG.md) | Changes in each release |
 
 ## Versioning
