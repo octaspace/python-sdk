@@ -10,7 +10,7 @@
 
 ## Creating a client
 
-`OctaSpaceClient` takes your [API token](../README.md#authentication) as
+`OctaSpaceClient` takes your [API key](../README.md#authentication) as
 `api_key` and optional settings as keyword arguments:
 
 ```python
@@ -31,11 +31,11 @@ it as a context manager, which closes it on exit:
 
 ```python
 with OctaSpaceClient(api_key=os.environ["OCTA_API_KEY"]) as client:
-    client.accounts.profile()
+    client.accounts.balance()
 
 client = OctaSpaceClient(api_key=os.environ["OCTA_API_KEY"])
 try:
-    client.accounts.profile()
+    client.accounts.balance()
 finally:
     client.close()
 ```
@@ -47,9 +47,9 @@ subclass of `ValueError`.
 
 | Option | Default | Environment variable | Effect |
 | --- | --- | --- | --- |
-| `api_key` | `None` | `OCTA_API_KEY` | Your API token; without it only the [calls without a key](../README.md#calls-without-an-api-key) work |
-| `base_url` | `https://api.octa.space` | `OCTA_BASE_URL` | Another API host |
-| `base_urls` | `None` | `OCTA_BASE_URLS` (comma-separated) | Several API hosts, see [Several API hosts](errors-and-reliability.md#several-api-hosts); overrides `base_url` |
+| `api_key` | `None` | `OCTA_API_KEY` | Your API key (`octa_ak_…`); without it only the [calls without a key](../README.md#calls-without-an-api-key) work |
+| `base_url` | `https://api.octa.space` (`octaspace.DEFAULT_BASE_URL`) | `OCTA_API_URL` | Another API host |
+| `base_urls` | `None` | `OCTA_API_URL` (several hosts, comma-separated) | Several API hosts, see [Several API hosts](errors-and-reliability.md#several-api-hosts); overrides `base_url` |
 | `open_timeout` | `10.0` | `OCTA_OPEN_TIMEOUT` | Seconds to wait for a connection |
 | `read_timeout` | `30.0` | `OCTA_READ_TIMEOUT` | Seconds to wait for a response |
 | `write_timeout` | `30.0` | `OCTA_WRITE_TIMEOUT` | Seconds to wait while sending a request |
@@ -67,6 +67,12 @@ subclass of `ValueError`.
 | `on_request` / `on_response` | `None` | — | Callables run before each request and after each response |
 
 Timeouts and intervals are in seconds.
+
+`OCTA_BASE_URL` and `OCTA_BASE_URLS` are still read when `OCTA_API_URL` is not
+set.
+
+Every request also carries the `X-OCTA-APP: python-sdk` header, which tells
+the API which app is calling.
 
 ## Environment variables
 
@@ -116,7 +122,7 @@ client: close it yourself.
 
 ```python
 with octaspace.client(api_key=os.environ["OCTA_API_KEY"]) as user_client:
-    user_client.accounts.profile()
+    user_client.accounts.balance()
 ```
 
 `octaspace.reset_configuration()` closes the shared client and restores the
@@ -166,7 +172,7 @@ octaspace -> GET https://api.octa.space/accounts/balance
 ```
 
 > [!NOTE]
-> The API token, other headers and request and response bodies are never
+> The API key, other headers and request and response bodies are never
 > logged.
 
 `on_request` receives a `RequestContext` with `method` (lower case), `path` and
@@ -198,15 +204,21 @@ An exception raised in a hook propagates to the caller of the SDK method.
 
 ## Responses
 
-Every resource method returns an `octaspace.response.APIResponse`:
+Methods return the API's JSON as `dict` and `list` objects, described by the
+`TypedDict` classes in `octaspace.types`. Methods that only change something,
+such as `hosting.set_prices()`, return `None`.
+
+To read the status, headers or raw body of each response, use the
+`on_response` hook: it receives an `octaspace.APIResponse`.
 
 | Attribute | Meaning |
 | --- | --- |
-| `data` | The parsed JSON body, or `None` if the body is empty or not JSON |
+| `data` | The parsed JSON body, or `None` if the body is empty |
 | `body` | The raw body as `bytes` |
 | `status_code` | HTTP status |
 | `headers` | Response headers |
 | `request_id` | Value of the `X-Request-Id` header, or `None` |
+| `rate_limit` | The `RateLimit-*` headers as a `RateLimit`, or `None` |
 
-The fields of each response are described in the
-[OctaSpace API reference](https://api.octa.space/api-docs).
+The API itself is described in the
+[OctaSpace API reference](https://api.octa.space/swagger).

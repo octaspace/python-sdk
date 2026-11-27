@@ -1,12 +1,48 @@
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
 
 import httpx
+
+_SECONDS = re.compile(r"\d+(\.\d+)?")
+_HTTP_DATE = re.compile(r"[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT")
+
+
+@dataclass(frozen=True, slots=True)
+class RateLimit:
+    """Rate limit state from the ``RateLimit-*`` headers of a response.
+
+    The API keeps separate limits: without an API key per IP address, with a
+    key per account, and a stricter one for starting and restarting sessions.
+    The values describe the limit of the request they came from.
+
+    Attributes:
+        limit: Requests allowed per window.
+        remaining: Requests left in the current window.
+        reset: Seconds until the window resets.
+    """
+
+    limit: int | None = None
+    remaining: int | None = None
+    reset: int | None = None
+
+    @classmethod
+    def from_headers(cls, headers: httpx.Headers) -> RateLimit | None:
+        """Read the ``RateLimit-*`` headers; ``None`` when there are none or one is invalid."""
+        values: dict[str, int] = {}
+        for name in ("limit", "remaining", "reset"):
+            raw = headers.get(f"ratelimit-{name}")
+            if raw is None or not raw.strip():
+                continue
+            if not raw.strip().isdigit():
+                return None
+            values[name] = int(raw.strip())
+        return cls(**values) if values else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +89,11 @@ class APIResponse:
         return str(value) if value is not None else None
 
     @property
+    def rate_limit(self) -> RateLimit | None:
+        """The rate limit state from the ``RateLimit-*`` headers, or ``None``."""
+        return RateLimit.from_headers(self.headers)
+
+    @property
     def retry_after(self) -> int | None:
         """The ``Retry-After`` header in whole seconds, or ``None``.
 
@@ -61,8 +102,11 @@ class APIResponse:
         value = self.headers.get("retry-after")
         if value is None:
             return None
-        if value.strip().isdigit():
-            return int(value)
+        value = value.strip()
+        if _SECONDS.fullmatch(value):
+            return math.ceil(float(value))
+        if not _HTTP_DATE.fullmatch(value):
+            return None
         try:
             when = parsedate_to_datetime(value)
         except (TypeError, ValueError):
