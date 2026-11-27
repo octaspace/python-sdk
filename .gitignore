@@ -8,5 +8,3 @@ __pycache__/
 *.pyc
 .venv/
 .python-version.local
-.tmp/
-.claude/

@@ -4,7 +4,7 @@ from typing import Any
 
 from .__about__ import __version__
 from .client import OctaSpaceClient
-from .config import ClientConfig
+from .config import DEFAULT_BASE_URL, ClientConfig
 from .errors import (
     APIConnectionError,
     APIError,
@@ -13,6 +13,7 @@ from .errors import (
     AuthenticationError,
     BadGatewayError,
     ConfigurationError,
+    ConflictError,
     GatewayTimeoutError,
     NetworkError,
     NotFoundError,
@@ -20,18 +21,38 @@ from .errors import (
     RateLimitError,
     ServerError,
     ServiceUnavailableError,
+    SessionStoppedError,
     ValidationError,
+    WaitTimeoutError,
 )
+from .money import MICRO_USD_PER_USD, format_usd, micro_usd_to_usd, usd_to_micro_usd
+from .resources import (
+    gpu_history_points,
+    is_compute_session,
+    is_render_session,
+    is_vpn_session,
+    network_history_points,
+)
+from .response import APIResponse, RateLimit
 
 _configuration = ClientConfig()
 _shared_client: OctaSpaceClient | None = None
 
 
 def configuration() -> ClientConfig:
+    """Return the global configuration."""
     return _configuration
 
 
 def configure(**overrides: Any) -> ClientConfig:
+    """Update the global configuration and close the shared client.
+
+    Args:
+        **overrides: Any ``ClientConfig`` field.
+
+    Returns:
+        The new global configuration.
+    """
     global _configuration, _shared_client
     _configuration = _configuration.with_overrides(**overrides)
     if _shared_client is not None:
@@ -41,6 +62,7 @@ def configure(**overrides: Any) -> ClientConfig:
 
 
 def reset_configuration() -> ClientConfig:
+    """Close the shared client and restore the default configuration."""
     global _configuration, _shared_client
     if _shared_client is not None:
         _shared_client.close()
@@ -50,6 +72,12 @@ def reset_configuration() -> ClientConfig:
 
 
 def client(api_key: str | None = None, **overrides: Any) -> OctaSpaceClient:
+    """Return the shared client, or a new client when arguments are given.
+
+    Without arguments, returns one client built from the global configuration
+    and reused on every call. With ``api_key`` or other options, returns a new
+    client based on the global configuration; close it yourself.
+    """
     global _shared_client
     if api_key is None and not overrides:
         if _shared_client is None:
@@ -60,6 +88,7 @@ def client(api_key: str | None = None, **overrides: Any) -> OctaSpaceClient:
 
 
 def shutdown_shared_client() -> None:
+    """Close the shared client; the next ``client()`` call creates a new one."""
     global _shared_client
     if _shared_client is not None:
         _shared_client.close()
@@ -67,27 +96,42 @@ def shutdown_shared_client() -> None:
 
 
 __all__ = [
+    "DEFAULT_BASE_URL",
+    "MICRO_USD_PER_USD",
     "APIConnectionError",
     "APIError",
     "APIPermissionError",
+    "APIResponse",
     "APITimeoutError",
     "AuthenticationError",
     "BadGatewayError",
     "ClientConfig",
     "ConfigurationError",
+    "ConflictError",
     "GatewayTimeoutError",
     "NetworkError",
     "NotFoundError",
     "OctaSpaceClient",
     "OctaSpaceError",
+    "RateLimit",
     "RateLimitError",
     "ServerError",
     "ServiceUnavailableError",
+    "SessionStoppedError",
     "ValidationError",
+    "WaitTimeoutError",
     "__version__",
     "client",
     "configuration",
     "configure",
+    "format_usd",
+    "gpu_history_points",
+    "is_compute_session",
+    "is_render_session",
+    "is_vpn_session",
+    "micro_usd_to_usd",
+    "network_history_points",
     "reset_configuration",
     "shutdown_shared_client",
+    "usd_to_micro_usd",
 ]

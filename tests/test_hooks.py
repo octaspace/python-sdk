@@ -11,7 +11,7 @@ def test_request_and_response_hooks(respx_mock) -> None:
     captured_request: list[RequestContext] = []
     captured_response: list[APIResponse] = []
 
-    respx_mock.get("https://api.octa.space/network").respond(json={"ok": True})
+    respx_mock.get("https://api.octa.space/network").respond(json={"at": 1})
 
     with OctaSpaceClient(
         api_key="test_key",
@@ -21,8 +21,8 @@ def test_request_and_response_hooks(respx_mock) -> None:
     ) as client:
         response = client.network.info()
 
-    assert response.data == {"ok": True}
+    assert response == {"at": 1}
     assert captured_request[0].method == "get"
     assert captured_request[0].path == "/network"
     assert captured_response[0].status_code == 200
-    assert cast(dict[str, bool], captured_response[0].data)["ok"] is True
+    assert cast(dict[str, int], captured_response[0].data)["at"] == 1

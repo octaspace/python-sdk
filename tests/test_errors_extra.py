@@ -11,7 +11,7 @@ def test_error_message_fallback_and_context() -> None:
     error = from_response(response)
 
     assert isinstance(error, APIError)
-    assert str(error) == "OctaSpace API error (400)"
+    assert str(error) == "Request failed with status 400"
     assert error_context(error)["status_code"] == 400
     assert error_context(RuntimeError("boom")) == {"message": "boom"}
 

@@ -1,591 +1,170 @@
-# octaspace
+# OctaSpace Python SDK
 
-Official Python SDK for the [OctaSpace API](https://api.octa.space/api-docs).
+[![PyPI](https://img.shields.io/pypi/v/octaspace)](https://pypi.org/project/octaspace/)
+[![Python](https://img.shields.io/pypi/pyversions/octaspace)](https://pypi.org/project/octaspace/)
+[![CI](https://github.com/octaspace/python-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/octaspace/python-sdk/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/octaspace/python-sdk/blob/main/LICENSE)
 
-## Features
+The official Python library for the [OctaSpace](https://octa.space) API. Rent
+compute machines, render nodes and VPN, manage sessions and the nodes you host,
+and read GPU market statistics from Python code.
 
-- Resource-oriented API: `client.nodes.list()`, `client.services.session(uuid).stop()`
-- Sync-first client built on `httpx`
-- Keep-alive mode with configurable pool limits
-- URL rotation / failover across multiple base URLs
-- Retry with exponential backoff and `Retry-After` handling
-- Typed error hierarchy with request ID and raw response access
-- `on_request` / `on_response` hooks for logging, tracing, and diagnostics
-- Shared client helpers for application-style integrations
-- Browser playground for manual QA against mock scenarios or the live API
-- Typed models for `Account`, `Balance`, `Node`, and `Session`
+**Contents:** [Installation](#installation) · [Quick start](#quick-start) ·
+[Authentication](#authentication) · [Handling errors](#handling-errors) ·
+[API overview](#api-overview) · [Documentation](#documentation) ·
+[Versioning](#versioning) · [License](#license)
 
 ## Installation
-
-### From PyPI
-
-Use this after the first public PyPI release. Until then, use the local development setup below.
 
 ```bash
 pip install octaspace
 ```
 
-If you use `uv`:
+or, with [uv](https://docs.astral.sh/uv/):
 
 ```bash
 uv add octaspace
 ```
 
-### Local Development Setup
+Requires Python 3.11 or later. The only runtime dependency is
+[httpx](https://www.python-httpx.org/).
 
-Recommended modern setup from the repository root:
+## Quick start
 
-```bash
-uv sync --group dev
-```
+1. [Create an API key](#authentication) and export it:
 
-This installs the SDK in editable mode together with test, lint, typecheck, and playground dependencies.
+   ```bash
+   export OCTA_API_KEY="octa_ak_..."
+   ```
 
-If you prefer a plain virtualenv + `pip` flow:
+2. Save this program as `quickstart.py` and run it with `python quickstart.py`:
 
-```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install -e . pytest pytest-cov respx mypy ruff hatchling fastapi jinja2 python-multipart uvicorn
-```
+   ```python
+   import os
 
-## Quick Start
+   from octaspace import APIError, OctaSpaceClient, format_usd
 
-```python
-from octaspace import OctaSpaceClient
+   with OctaSpaceClient(api_key=os.environ["OCTA_API_KEY"]) as client:
+       try:
+           balance = client.accounts.balance()
+           print("Balance:", format_usd(balance["balance"]))  # Balance: $12.500000
 
-# Public endpoint
-with OctaSpaceClient() as client:
-    print(client.network.info().data)
+           for machine in client.compute.list():
+               price = format_usd(machine["base_price"])
+               print(machine["node_number"], machine["city"], price, "per hour")
+       except APIError as exc:
+           raise SystemExit(f"{exc.status_code}: {exc}") from None
+   ```
 
-# Authenticated endpoints
-with OctaSpaceClient(api_key="your-api-key") as client:
-    print(client.accounts.profile().data)
-    print(client.accounts.balance().data)
-    print(client.nodes.list().data)
-```
+Methods return the API's JSON as plain `dict` and `list` objects, typed for
+your editor and type checker. Create one client, reuse it, and close it when you
+are done (the `with` block does that for you).
 
-### Resource Examples
+## Authentication
 
-```python
-from octaspace import OctaSpaceClient
+The SDK authenticates with an **API key** of your OctaSpace account. You create
+and delete API keys in the OctaSpace dashboard:
 
-client = OctaSpaceClient(api_key="your-api-key")
+1. Sign in to the [OctaSpace dashboard](https://console.octa.space).
+2. In the sidebar, open **Account → Credentials**.
+3. In the **API Keys** section, click **New key**.
+4. Enter a **Label** that tells you where the key is used, for example
+   `billing-service`, and click **Create key**.
+5. Copy the key. It starts with `octa_ak_`.
 
-# Accounts
-client.accounts.profile()                # GET /accounts
-client.accounts.balance()                # GET /accounts/balance
-client.accounts.generate_wallet()        # POST /accounts
+> **Important:** The key is shown in full only once, right after you create it.
+> Copy it before you close the dialog. If you lose it, delete it and create a
+> new one.
 
-# Nodes
-client.nodes.list()                      # GET /nodes
-client.nodes.find(123)                   # GET /nodes/:id
-client.nodes.download_ident(123)         # GET /nodes/:id/ident
-client.nodes.download_logs(123)          # GET /nodes/:id/logs
-client.nodes.update_prices(123, gpu_hour=0.5)  # PATCH /nodes/:id/prices
-client.nodes.reboot(123)                 # GET /nodes/:id/reboot
-
-# Sessions
-client.sessions.list()                   # GET /sessions
-client.sessions.list(recent=True)        # GET /sessions?recent=true
-
-# Session proxy
-session = client.services.session("uuid-here")
-session.info()                           # GET /services/:uuid/info
-session.logs()                           # GET /services/:uuid/logs
-session.stop(score=5)                    # POST /services/:uuid/stop
-
-# Services
-client.services.mr.list()                # GET /services/mr
-client.services.mr.create(
-    node_id=1,
-    disk_size=10,
-    image="ubuntu:24.04",
-    app="249b4cb3-3db1-4c06-98a4-772ba88cd81c",
-)                                        # POST /services/mr
-
-client.services.vpn.list()               # GET /services/vpn
-client.services.vpn.create(node_id=1, subkind="wg")  # POST /services/vpn
-
-client.services.render.list()            # GET /services/render
-client.services.render.create(node_id=1, disk_size=100)  # POST /services/render
-
-# Apps
-client.apps.list()                       # GET /apps
-
-# Network
-client.network.info()                    # GET /network
-
-# Idle Jobs
-client.idle_jobs.find(node_id=69, job_id=42)  # GET /idle_jobs/:node_id/:job_id
-client.idle_jobs.logs(node_id=69, job_id=42)  # GET /idle_jobs/:node_id/:job_id/logs
-
-client.close()
-```
-
-## Shared Client And App Integration
-
-Like the Ruby SDK, the Python package exposes a process-level shared client for app-style integrations.
-
-### Global configuration
+Pass the key as `api_key`, for example from the `OCTA_API_KEY` environment
+variable. The SDK sends it in the `Authorization: Bearer <key>` header.
 
 ```python
-import octaspace
-
-octaspace.configure(
-    api_key="your-api-key",
-    keep_alive=True,
-    pool_size=10,
-)
-```
-
-### Shared client
-
-`octaspace.client()` with no arguments returns a lazily initialized shared client based on the current global configuration:
-
-```python
-import octaspace
-
-octa_client = octaspace.client()
-print(octa_client.network.info().data)
-```
-
-Pass arguments to create a one-off client instead:
-
-```python
-import octaspace
-
-user_client = octaspace.client(api_key="per-user-token")
-print(user_client.accounts.profile().data)
-user_client.close()
-```
-
-### Shutdown
-
-When your process stops, or when a worker is recycling, close the shared client explicitly:
-
-```python
-import octaspace
-
-octaspace.shutdown_shared_client()
-```
-
-You can also reset the global configuration:
-
-```python
-import octaspace
-
-octaspace.reset_configuration()
-```
-
-## Configuration Reference
-
-| Option | Default | Description |
-| --- | --- | --- |
-| `api_key` | `None` | API key sent as the `Authorization` header |
-| `base_url` | `https://api.octa.space` | Primary API endpoint |
-| `base_urls` | `None` | Multiple endpoints enabling rotation / failover |
-| `keep_alive` | `False` | Reuse pooled connections instead of forcing `Connection: close` |
-| `pool_size` | `5` | Maximum keep-alive connections |
-| `max_connections` | `20` | Total connection cap |
-| `pool_timeout` | `5.0` | Seconds to wait for an available pooled connection |
-| `idle_timeout` | `60.0` | Keep-alive expiry in seconds |
-| `open_timeout` | `10.0` | TCP connect timeout |
-| `read_timeout` | `30.0` | Response read timeout |
-| `write_timeout` | `30.0` | Request body write timeout |
-| `max_retries` | `2` | Retry attempts on retryable responses |
-| `retry_interval` | `0.5` | Base retry interval in seconds |
-| `backoff_factor` | `2.0` | Exponential backoff multiplier |
-| `ssl_verify` | `True` | Toggle TLS certificate verification |
-| `on_request` | `None` | Callable receiving `RequestContext` before each request |
-| `on_response` | `None` | Callable receiving `APIResponse` after each response |
-| `logger` | `None` | Standard-library logger used by hook dispatch |
-| `user_agent` | auto | Override the default SDK user agent |
-
-### Environment Loading
-
-`ClientConfig.from_env()` reads configuration from environment variables:
-
-```python
-from octaspace.config import ClientConfig
-
-config = ClientConfig.from_env()
-```
-
-Supported variables:
-
-- `OCTA_API_KEY`
-- `OCTA_BASE_URL`
-- `OCTA_BASE_URLS`
-- `OCTA_KEEP_ALIVE`
-- `OCTA_POOL_SIZE`
-- `OCTA_MAX_CONNECTIONS`
-- `OCTA_POOL_TIMEOUT`
-- `OCTA_IDLE_TIMEOUT`
-- `OCTA_OPEN_TIMEOUT`
-- `OCTA_READ_TIMEOUT`
-- `OCTA_WRITE_TIMEOUT`
-- `OCTA_MAX_RETRIES`
-- `OCTA_RETRY_INTERVAL`
-- `OCTA_BACKOFF_FACTOR`
-- `OCTA_SSL_VERIFY`
-- `OCTA_LOGGER`
-- `OCTA_USER_AGENT`
-
-`OCTA_BASE_URLS` accepts a comma-separated list.
-
-## Keep-Alive Mode
-
-```python
-from octaspace import OctaSpaceClient
-
-with OctaSpaceClient(
-    api_key="your-api-key",
-    keep_alive=True,
-    pool_size=10,
-    idle_timeout=120,
-) as client:
-    print(client.transport_stats())
-```
-
-Example transport stats:
-
-```python
-{
-    "mode": "persistent",
-    "limits": {
-        "max_keepalive_connections": 10,
-        "max_connections": 20,
-        "keepalive_expiry": 120.0,
-    },
-    "url": "https://api.octa.space",
-}
-```
-
-## URL Rotation / Failover
-
-```python
-from octaspace import OctaSpaceClient
-
-with OctaSpaceClient(
-    api_key="your-api-key",
-    base_urls=[
-        "https://api.octa.space",
-        "https://api2.octa.space",
-    ],
-) as client:
-    print(client.transport_stats())
-```
-
-Behaviour:
-
-- healthy endpoints are selected round-robin
-- connection and timeout failures temporarily mark a URL as failed
-- failed URLs automatically re-enter rotation after cooldown
-- if only one URL is configured, no rotator is created
-
-## Hooks
-
-```python
-import logging
+import os
 
 from octaspace import OctaSpaceClient
 
-logger = logging.getLogger("octaspace-demo")
-
-def on_request(ctx) -> None:
-    logger.info("-> %s %s", ctx.method.upper(), ctx.path)
-
-def on_response(response) -> None:
-    logger.info("<- %s %s", response.status_code, response.request_id)
-
-with OctaSpaceClient(
-    api_key="your-api-key",
-    on_request=on_request,
-    on_response=on_response,
-    logger=logger,
-) as client:
-    client.network.info()
+client = OctaSpaceClient(api_key=os.environ["OCTA_API_KEY"])
 ```
 
-## Error Handling
+> **Warning:** An API key acts on behalf of your account: it can start sessions
+> that are charged to your balance. Keep it out of source code and version
+> control. If a key leaks, delete it under **Account → Credentials → API Keys**;
+> every program that uses it stops working at once.
+
+The **API Keys** list shows each key's label, its first characters and when it
+was last used. Use a separate key for each program or machine, so that you can
+delete one without affecting the others. The number of keys per account is
+limited; the counter next to **API Keys** shows how many you have.
+
+### Calls without an API key
+
+These methods also work without an API key. Create the client without
+`api_key` to use them anonymously:
+
+| Method | Without a key |
+| --- | --- |
+| `network.info()`, `network.history()` | Same result |
+| `stats.gpu_current()`, `stats.gpu_history()`, `stats.gpu_locations()`, `stats.mining()` | Same result |
+| `compute.list()`, `render.list()`, `vpn.list()` | Refreshed about once an hour instead of every 10 seconds |
+| `compute.apps()` | Official apps only, without your own |
+
+Every other method requires an API key. Without one it raises an
+`AuthenticationError` before the request is sent.
+
+## Handling errors
+
+Every error the SDK raises is an `octaspace.OctaSpaceError`. Errors returned by
+the API are subclasses of `APIError`; catch the ones you can handle:
 
 ```python
-from octaspace import (
-    APIConnectionError,
-    APIPermissionError,
-    APITimeoutError,
-    AuthenticationError,
-    NotFoundError,
-    OctaSpaceClient,
-    RateLimitError,
-    ValidationError,
-)
+from octaspace import AuthenticationError, RateLimitError, ValidationError
 
 try:
-    with OctaSpaceClient(api_key="token") as client:
-        client.nodes.find(999_999)
-except NotFoundError as exc:
-    print("Not found", exc.request_id)
+    client.compute.start("7KQ4-M2XD-4", "ubuntu:24.04")
 except AuthenticationError:
-    print("Invalid API key")
-except APIPermissionError:
-    print("Permission denied")
+    ...  # the API key is missing, wrong or deleted
 except ValidationError as exc:
-    print("Validation failed", exc)
+    print(exc)  # the request was rejected, for example: Insufficient balance
 except RateLimitError as exc:
-    print("Retry after", exc.retry_after)
-except (APIConnectionError, APITimeoutError) as exc:
-    print("Network issue", exc)
+    ...  # too many requests; wait exc.retry_after seconds
 ```
 
-### Error Hierarchy
+See [Errors, rate limits and retries](https://github.com/octaspace/python-sdk/blob/main/docs/errors-and-reliability.md).
 
-```text
-OctaSpaceError
-├── ConfigurationError
-├── NetworkError
-│   ├── APIConnectionError
-│   └── APITimeoutError
-└── APIError
-    ├── AuthenticationError        401
-    ├── APIPermissionError         403
-    ├── NotFoundError              404
-    ├── ValidationError            422
-    ├── RateLimitError             429
-    └── ServerError                5xx
-        ├── BadGatewayError        502
-        ├── ServiceUnavailableError 503
-        └── GatewayTimeoutError    504
-```
+## API overview
 
-All `APIError` subclasses expose:
+| Resource | Dashboard section | Operations | Guide |
+| --- | --- | --- | --- |
+| `client.compute` | Marketplace → Compute, Applications | List machines and apps, start, batch start, restart | [Compute](https://github.com/octaspace/python-sdk/blob/main/docs/resources.md#compute) |
+| `client.render` | Render → Launch Nodes | List render nodes, start, batch start | [Render](https://github.com/octaspace/python-sdk/blob/main/docs/resources.md#render) |
+| `client.vpn` | Marketplace → VPN | List VPN nodes, start | [VPN](https://github.com/octaspace/python-sdk/blob/main/docs/resources.md#vpn) |
+| `client.sessions` | Marketplace → Sessions, Render → Render Nodes | List, get, logs, stop, wait until ready or stopped | [Sessions](https://github.com/octaspace/python-sdk/blob/main/docs/sessions.md) |
+| `client.hosting` | Hosting → Nodes | Your nodes, one node, set prices, maintenance | [Hosting](https://github.com/octaspace/python-sdk/blob/main/docs/resources.md#hosting) |
+| `client.accounts` | Account → Billing | Balance | [Accounts](https://github.com/octaspace/python-sdk/blob/main/docs/resources.md#accounts) |
+| `client.network` | — | Platform statistics now and over time | [Network](https://github.com/octaspace/python-sdk/blob/main/docs/resources.md#network) |
+| `client.stats` | — | GPU market: current, history, locations; mining | [Stats](https://github.com/octaspace/python-sdk/blob/main/docs/resources.md#stats) |
 
-- `status_code`
-- `request_id`
-- `response`
+Every class and method has a docstring, and the package ships type hints
+(`py.typed`).
 
-`RateLimitError` also exposes `retry_after`.
+## Documentation
 
-## Typed Models
-
-Resources return `APIResponse` objects by default. If you want structured helper objects, use the typed models explicitly:
-
-```python
-from octaspace import OctaSpaceClient
-from octaspace.models import Node
-
-with OctaSpaceClient(api_key="your-api-key") as client:
-    response = client.nodes.find(123)
-    node = Node.from_dict(response.data)
-    print(node.id)
-    print(node.state)
-    print(node.online)
-```
-
-Available models: `Node`, `Account`, `Balance`, `Session`.
-
-## Browser Playground
-
-The repository includes a development-only FastAPI playground. It is **not included in the published PyPI wheel** and exists for manual SDK QA, mirroring the role of the Ruby dummy app.
-
-### Start
-
-From the repository root:
-
-```bash
-uv sync --group playground
-uvicorn playground.main:app --reload
-```
-
-Open:
-
-```text
-http://127.0.0.1:8000/playground/dashboard
-```
-
-### What The Playground Covers
-
-- the same page set and general layout direction as the Ruby dummy app
-- sidebar runtime settings for API key, transport scenario, and base URL
-- direct pages for dashboard, network, account, apps, nodes, sessions, services, idle jobs, and diagnostics
-- footer request log for every SDK call triggered through the playground
-- deterministic offline QA via the `Fixtures` scenario
-- failure simulation via `401`, `403`, `404`, `429`, `500`, `slow`, `timeout`, and `network-error`
-- live QA against the real API when `Transport = Real API`
-
-### Routes
-
-| Route | Content |
+| Guide | Covers |
 | --- | --- |
-| `/playground/dashboard` | Network + account summary |
-| `/playground/network` | Public network endpoint and transport summary |
-| `/playground/account` | Profile + balance view |
-| `/playground/apps` | App catalog |
-| `/playground/nodes` | Node list + detail panel |
-| `/playground/nodes/{id}` | Standalone node detail |
-| `/playground/sessions` | Current and recent sessions |
-| `/playground/services` | Machine Rental, Render, and VPN tabs |
-| `/playground/idle-jobs` | Idle job details + logs |
-| `/playground/diagnostics` | Direct SDK call execution + smoke suite |
+| [Client configuration](https://github.com/octaspace/python-sdk/blob/main/docs/getting-started.md) | Options and defaults, environment variables, shared client, timeouts, keep-alive, hooks and logging |
+| [Resources](https://github.com/octaspace/python-sdk/blob/main/docs/resources.md) | Compute, render, VPN, hosting, balance, network and GPU statistics |
+| [Sessions](https://github.com/octaspace/python-sdk/blob/main/docs/sessions.md) | Waiting until ready, connecting, logs, stopping |
+| [Errors, rate limits and retries](https://github.com/octaspace/python-sdk/blob/main/docs/errors-and-reliability.md) | Error classes, limits, automatic retries, several API hosts |
+| [Changelog](https://github.com/octaspace/python-sdk/blob/main/CHANGELOG.md) | Changes in each release |
 
-Notes:
+## Versioning
 
-- the sidebar intentionally mirrors the Ruby dummy app navigation, so `Account` exists as a direct route but is not shown in the nav
-- request log lives in the footer, not on a separate `Requests` page
-- diagnostics includes mutation methods; only run them against disposable targets when using real credentials
-
-Detailed QA steps live in:
-
-- [`docs/runbooks/browser-playground.md`](docs/runbooks/browser-playground.md)
-- [`docs/runbooks/console-verification.md`](docs/runbooks/console-verification.md)
-
-## Repository Smoke Command
-
-The repository exposes both a module entry point and a script entry point:
-
-```bash
-.venv/bin/python -m octaspace
-.venv/bin/octaspace-smoke
-```
-
-If `OCTA_API_KEY` is present, smoke output includes `accounts.balance()` as well as `network.info()`.
-
-## Console And REPL Usage
-
-### Quick REPL Session
-
-```bash
-.venv/bin/python
-```
-
-```python
->>> from octaspace import OctaSpaceClient
->>> client = OctaSpaceClient()
->>> client.network.info().data
->>> client.close()
-```
-
-### Authenticated REPL Session
-
-```bash
-read -s OCTA_API_KEY
-export OCTA_API_KEY
-.venv/bin/python
-```
-
-`read -s OCTA_API_KEY` and `export OCTA_API_KEY` are shell commands, not Python statements. Run them in `zsh` / `bash`, type the token when prompted, press `Enter`, and only then start Python.
-
-```python
->>> import os
->>> from octaspace import OctaSpaceClient
->>> client = OctaSpaceClient(api_key=os.environ["OCTA_API_KEY"], keep_alive=True, pool_size=10)
->>> client.accounts.profile().data
->>> client.accounts.balance().data
->>> len(client.nodes.list().data)
->>> len(client.sessions.list().data)
->>> client.transport_stats()
->>> client.close()
-```
-
-If you are already inside Python REPL, set the variable there instead of using `read`:
-
-```python
->>> import os, getpass
->>> os.environ["OCTA_API_KEY"] = getpass.getpass("OCTA_API_KEY: ")
-```
-
-### Local Mock Console Script
-
-```bash
-.venv/bin/python examples/console_mock.py
-```
-
-Expected output includes:
-
-- `transport_stats`
-- `network`
-- `profile`
-- `balance`
-- `nodes`
-- `session_info`
-- `session_stop`
-
-### Local Real Console Script
-
-```bash
-.venv/bin/python examples/console_real.py
-```
-
-Optional environment variables:
-
-- `OCTA_API_KEY`
-- `OCTA_SESSION_UUID`
-- `OCTA_ALLOW_STOP=1`
-
-If `OCTA_API_KEY` is unset, the script still verifies the public network endpoint and skips authenticated checks explicitly.
-
-## Development
-
-### Local Checks
-
-```bash
-.venv/bin/ruff check src tests examples playground
-.venv/bin/mypy src/octaspace playground
-.venv/bin/pytest
-```
-
-Or with `uv` if installed:
-
-```bash
-uv run ruff check src tests examples playground
-uv run mypy src/octaspace playground
-uv run pytest
-```
-
-### Build And Wheel Smoke Test
-
-Build the distribution:
-
-```bash
-.venv/bin/python -m build
-```
-
-Or with `uv`:
-
-```bash
-uv build
-```
-
-Inspect the wheel contents (should only contain `octaspace/`, no `playground/`):
-
-```bash
-python3 -m zipfile -l dist/octaspace-*.whl | grep -v dist-info
-```
-
-Create a clean environment and install the built wheel:
-
-```bash
-python3 -m venv /tmp/octaspace-wheel-test
-/tmp/octaspace-wheel-test/bin/python -m pip install dist/octaspace-*.whl
-/tmp/octaspace-wheel-test/bin/python -c "from octaspace import OctaSpaceClient; print(OctaSpaceClient().network.info().data)"
-```
-
-### Verification Runbooks
-
-- [`docs/runbooks/console-verification.md`](docs/runbooks/console-verification.md)
-- [`docs/runbooks/browser-playground.md`](docs/runbooks/browser-playground.md)
-- [`docs/runbooks/publish.md`](docs/runbooks/publish.md)
-
-Release gate:
-
-1. `ruff` clean
-2. `mypy` clean
-3. `pytest` all passing
-4. console verification completed
-5. browser playground verification completed
-6. wheel smoke test passing
-7. follow `docs/runbooks/publish.md` for TestPyPI → PyPI
+The library follows [Semantic Versioning](https://semver.org). Until version
+1.0, a minor release can contain breaking changes; the
+[changelog](https://github.com/octaspace/python-sdk/blob/main/CHANGELOG.md)
+marks them as **Breaking**.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/octaspace/python-sdk/blob/main/LICENSE)

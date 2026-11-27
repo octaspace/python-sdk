@@ -1,15 +1,19 @@
 from __future__ import annotations
 
-from ..response import APIResponse
+from typing import cast
+
+from ..types import AccountBalance
 from .base import Resource
 
 
 class AccountsResource(Resource):
-    def profile(self) -> APIResponse:
-        return self.get("/accounts")
+    """The account the API key belongs to."""
 
-    def balance(self) -> APIResponse:
-        return self.get("/accounts/balance")
+    def balance(self) -> AccountBalance:
+        """Return the account balance (``GET /accounts/balance``).
 
-    def generate_wallet(self) -> APIResponse:
-        return self.post("/accounts")
+        ``balance`` is in micro-USD; format it with ``octaspace.format_usd()``.
+        It already includes what running sessions have used and can be
+        negative. Also a quick way to check that an API key works.
+        """
+        return cast(AccountBalance, self._request("GET", "/accounts/balance"))

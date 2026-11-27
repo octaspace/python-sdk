@@ -1,29 +1,63 @@
 from __future__ import annotations
 
+import re
 import time
 from typing import Any
 
 import httpx
 
 from ..config import ClientConfig
-from ..errors import APIConnectionError, APITimeoutError, raise_for_response
+from ..errors import (
+    API_KEY_PREFIX,
+    APIConnectionError,
+    APIError,
+    APITimeoutError,
+    AuthenticationError,
+    NetworkError,
+    from_response,
+)
 from ..hooks import HookDispatcher
-from ..response import APIResponse
-from .retry import compute_backoff, is_retryable_response
+from ..response import APIResponse, RateLimit
+from .base import AuthMode
+from .retry import can_resend, compute_backoff, is_retryable_response
 from .rotator import UrlRotator
+
+_BEARER = re.compile(r"^bearer\s+", re.IGNORECASE)
+_DASHBOARD_HINT = "the OctaSpace dashboard: Account → Credentials → API Keys"
+
+APP_HEADER = "X-OCTA-APP"
+"""Header that tells the API which app is calling; sent with every request."""
+APP_NAME = "python-sdk"
+
+
+def normalize_api_key(key: str | None) -> str | None:
+    """Strip whitespace and a leading ``Bearer `` from a key; ``None`` for an empty one."""
+    if key is None:
+        return None
+    key = _BEARER.sub("", key.strip())
+    return key or None
 
 
 class HttpxTransport:
+    """Sends requests with ``httpx``: authentication, retries, failover and errors."""
+
     def __init__(self, config: ClientConfig, client: httpx.Client | None = None) -> None:
         self._config = config
+        self._api_key = normalize_api_key(config.api_key)
         self._hooks = HookDispatcher(config.on_request, config.on_response, config.logger)
         self._rotator = UrlRotator(config.urls) if len(config.urls) > 1 else None
+        self._rate_limit: RateLimit | None = None
         self._client = client or httpx.Client(
             timeout=config.build_timeout(),
             limits=config.build_limits(),
             verify=config.ssl_verify,
             event_hooks=self._hooks.event_hooks(),
         )
+
+    @property
+    def rate_limit(self) -> RateLimit | None:
+        """The rate limit state of the latest response that carried it."""
+        return self._rate_limit
 
     def request(
         self,
@@ -32,83 +66,40 @@ class HttpxTransport:
         *,
         params: dict[str, Any] | None = None,
         body: Any = None,
-        headers: dict[str, str] | None = None,
+        auth: AuthMode = "required",
+        idempotent: bool = False,
     ) -> APIResponse:
-        normalized_method = method.upper()
-        normalized_path = path if path.startswith("/") else f"/{path}"
-        response: APIResponse | None = None
-        attempts = self._config.max_retries + 1
-        for attempt in range(attempts):
-            response = self._send_with_failover(
-                normalized_method,
-                normalized_path,
-                params=params,
-                body=body,
-                headers=headers,
-            )
-            if (
-                is_retryable_response(normalized_method, response.status_code)
-                and attempt < attempts - 1
-            ):
-                delay = compute_backoff(
-                    attempt=attempt,
-                    retry_interval=self._config.retry_interval,
-                    backoff_factor=self._config.backoff_factor,
-                    retry_after=response.retry_after,
+        method = method.upper()
+        path = path if path.startswith("/") else f"/{path}"
+        headers = self._headers(method, path, auth, body)
+        params = {key: value for key, value in (params or {}).items() if value is not None}
+        attempt = 0
+        while True:
+            try:
+                response = self._send_with_failover(
+                    method,
+                    path,
+                    params=params or None,
+                    body=body,
+                    headers=headers,
+                    idempotent=idempotent,
                 )
+            except httpx.TransportError as exc:
+                if attempt >= self._config.max_retries or not can_resend(method, exc, idempotent):
+                    raise _network_error(exc) from exc
+                time.sleep(self._backoff(attempt))
+            else:
+                rate_limit = response.rate_limit
+                if rate_limit is not None:
+                    self._rate_limit = rate_limit
+                delay = self._retry_delay(method, response, attempt, idempotent)
+                if delay is None:
+                    if response.is_error:
+                        raise self._error(response)
+                    _check_json(response)
+                    return response
                 time.sleep(delay)
-                continue
-            break
-
-        assert response is not None
-        if response.is_error:
-            raise_for_response(response)
-        return response
-
-    def get(
-        self,
-        path: str,
-        *,
-        params: dict[str, Any] | None = None,
-        headers: dict[str, str] | None = None,
-    ) -> APIResponse:
-        return self.request("GET", path, params=params, headers=headers)
-
-    def post(
-        self,
-        path: str,
-        *,
-        body: Any = None,
-        headers: dict[str, str] | None = None,
-    ) -> APIResponse:
-        return self.request("POST", path, body=body, headers=headers)
-
-    def put(
-        self,
-        path: str,
-        *,
-        body: Any = None,
-        headers: dict[str, str] | None = None,
-    ) -> APIResponse:
-        return self.request("PUT", path, body=body, headers=headers)
-
-    def patch(
-        self,
-        path: str,
-        *,
-        body: Any = None,
-        headers: dict[str, str] | None = None,
-    ) -> APIResponse:
-        return self.request("PATCH", path, body=body, headers=headers)
-
-    def delete(
-        self,
-        path: str,
-        *,
-        params: dict[str, Any] | None = None,
-        headers: dict[str, str] | None = None,
-    ) -> APIResponse:
-        return self.request("DELETE", path, params=params, headers=headers)
+            attempt += 1
 
     def close(self) -> None:
         self._client.close()
@@ -132,65 +123,106 @@ class HttpxTransport:
             stats["url"] = self._config.urls[0]
         return stats
 
+    def _headers(self, method: str, path: str, auth: AuthMode, body: Any) -> dict[str, str]:
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": self._config.resolved_user_agent,
+            APP_HEADER: APP_NAME,
+        }
+        if auth != "none":
+            if self._api_key is not None:
+                headers["Authorization"] = f"Bearer {self._api_key}"
+            elif auth == "required":
+                raise AuthenticationError(
+                    f"An API key is required for {method} {path}: pass an API key "
+                    f"({API_KEY_PREFIX}…) from {_DASHBOARD_HINT}",
+                    response=APIResponse(status_code=401, headers=httpx.Headers(), body=b""),
+                )
+        if body is not None:
+            headers["Content-Type"] = "application/json"
+        if not self._config.keep_alive:
+            headers["Connection"] = "close"
+        return headers
+
+    def _error(self, response: APIResponse) -> APIError:
+        error = from_response(response)
+        if (
+            response.status_code == 401
+            and self._api_key is not None
+            and not self._api_key.startswith(API_KEY_PREFIX)
+        ):
+            return from_response(
+                response,
+                f'{error.message} (API keys start with "{API_KEY_PREFIX}"; create one in '
+                f"{_DASHBOARD_HINT})",
+            )
+        return error
+
+    def _retry_delay(
+        self, method: str, response: APIResponse, attempt: int, idempotent: bool
+    ) -> float | None:
+        """Seconds to wait before repeating the request, or ``None`` not to repeat it."""
+        if attempt >= self._config.max_retries:
+            return None
+        if not is_retryable_response(method, response.status_code, idempotent):
+            return None
+        retry_after = response.retry_after
+        if retry_after is not None and retry_after > self._config.max_retry_after:
+            return None
+        return self._backoff(attempt, retry_after=retry_after)
+
+    def _backoff(self, attempt: int, *, retry_after: int | None = None) -> float:
+        return compute_backoff(
+            attempt=attempt,
+            retry_interval=self._config.retry_interval,
+            backoff_factor=self._config.backoff_factor,
+            retry_after=retry_after,
+        )
+
     def _send_with_failover(
         self,
         method: str,
         path: str,
         *,
-        params: dict[str, Any] | None = None,
-        body: Any = None,
-        headers: dict[str, str] | None = None,
+        params: dict[str, Any] | None,
+        body: Any,
+        headers: dict[str, str],
+        idempotent: bool,
     ) -> APIResponse:
-        ordered_urls = self._ordered_urls()
-        last_error: Exception | None = None
-        for base_url in ordered_urls:
+        """Send to the next healthy host; move on to another one only when that is safe."""
+        *fallbacks, last = self._ordered_urls()
+        for base_url in fallbacks:
             try:
-                response = self._send_to_url(
-                    base_url,
-                    method,
-                    path,
-                    params=params,
-                    body=body,
-                    headers=headers,
-                )
-            except (APIConnectionError, APITimeoutError) as exc:
-                last_error = exc
-                if self._rotator is not None:
-                    self._rotator.mark_failed(base_url)
-                continue
-
-            if self._rotator is not None:
-                self._rotator.mark_success(base_url)
-            return response
-
-        if last_error is not None:
-            raise last_error
-        raise APIConnectionError("All API endpoints unavailable")
+                return self._send_to_url(base_url, method, path, params, body, headers)
+            except httpx.TransportError as exc:
+                if not can_resend(method, exc, idempotent):
+                    raise
+        return self._send_to_url(last, method, path, params, body, headers)
 
     def _send_to_url(
         self,
         base_url: str,
         method: str,
         path: str,
-        *,
-        params: dict[str, Any] | None = None,
-        body: Any = None,
-        headers: dict[str, str] | None = None,
+        params: dict[str, Any] | None,
+        body: Any,
+        headers: dict[str, str],
     ) -> APIResponse:
-        request_headers = self._default_headers(headers)
-        url = self._build_url(base_url, path)
         try:
             response = self._client.request(
                 method,
-                url,
+                f"{base_url.rstrip('/')}{path}",
                 params=params,
                 json=body,
-                headers=request_headers,
+                headers=headers,
             )
-        except httpx.TimeoutException as exc:
-            raise APITimeoutError(str(exc)) from exc
-        except httpx.NetworkError as exc:
-            raise APIConnectionError(str(exc)) from exc
+            response.read()
+        except httpx.TransportError:
+            if self._rotator is not None:
+                self._rotator.mark_failed(base_url)
+            raise
+        if self._rotator is not None:
+            self._rotator.mark_success(base_url)
         return self._hooks.response_wrapper(response)
 
     def _ordered_urls(self) -> list[str]:
@@ -201,19 +233,16 @@ class HttpxTransport:
         remainder = [url for url in available if url != primary]
         return [primary, *remainder]
 
-    def _default_headers(self, headers: dict[str, str] | None = None) -> dict[str, str]:
-        merged = {
-            "Accept": "application/json",
-            "User-Agent": self._config.resolved_user_agent,
-        }
-        if self._config.api_key:
-            merged["Authorization"] = self._config.api_key
-        if not self._config.keep_alive:
-            merged["Connection"] = "close"
-        if headers:
-            merged.update(headers)
-        return merged
 
-    @staticmethod
-    def _build_url(base_url: str, path: str) -> str:
-        return f"{base_url.rstrip('/')}/{path.lstrip('/')}"
+def _check_json(response: APIResponse) -> None:
+    """Raise when a successful response has a body that is not JSON, e.g. a proxy's HTML page."""
+    if response.body.strip() and response.data is None:
+        raise APIError(
+            f"Response is not valid JSON (status {response.status_code})", response=response
+        )
+
+
+def _network_error(error: httpx.TransportError) -> NetworkError:
+    if isinstance(error, httpx.TimeoutException):
+        return APITimeoutError(str(error) or "Request timed out")
+    return APIConnectionError(str(error) or "Connection failed")
