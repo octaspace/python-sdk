@@ -6,21 +6,27 @@ import random
 
 import httpx
 
+# Repeating these changes nothing on the API side.
 IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE"})
-RETRYABLE_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
+RETRYABLE_STATUSES = frozenset({429, 502, 503, 504})
 
 # Failures before the request leaves the client: resending cannot run it twice.
 NOT_SENT_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
 
 
-def is_retryable_response(method: str, status_code: int) -> bool:
-    """Whether a response with this status is worth repeating for this method."""
-    return method.upper() in IDEMPOTENT_METHODS and status_code in RETRYABLE_STATUSES
+def is_idempotent(method: str, idempotent: bool = False) -> bool:
+    """Whether a request can be repeated without changing the outcome."""
+    return idempotent or method.upper() in IDEMPOTENT_METHODS
 
 
-def can_resend(method: str, error: httpx.TransportError) -> bool:
+def is_retryable_response(method: str, status_code: int, idempotent: bool = False) -> bool:
+    """Whether a response with this status is worth repeating for this request."""
+    return is_idempotent(method, idempotent) and status_code in RETRYABLE_STATUSES
+
+
+def can_resend(method: str, error: httpx.TransportError, idempotent: bool = False) -> bool:
     """Whether a request that failed with ``error`` can safely be sent again."""
-    return method.upper() in IDEMPOTENT_METHODS or isinstance(error, NOT_SENT_ERRORS)
+    return is_idempotent(method, idempotent) or isinstance(error, NOT_SENT_ERRORS)
 
 
 def compute_backoff(

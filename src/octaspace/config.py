@@ -13,6 +13,9 @@ from .hooks import RequestHook, ResponseHook
 
 _Number = TypeVar("_Number", int, float)
 
+DEFAULT_BASE_URL = "https://api.octa.space"
+"""The API host used when ``base_url`` and ``base_urls`` are not set."""
+
 
 def _env_bool(value: str | None, default: bool) -> bool:
     if value is None:
@@ -33,7 +36,7 @@ class ClientConfig:
     """
 
     api_key: str | None = field(default=None, repr=False)
-    base_url: str = "https://api.octa.space"
+    base_url: str = DEFAULT_BASE_URL
     base_urls: list[str] | None = None
     keep_alive: bool = False
     pool_size: int = 5
@@ -122,9 +125,11 @@ class ClientConfig:
     def from_env(cls, **overrides: Any) -> ClientConfig:
         """Build a configuration from ``OCTA_*`` environment variables.
 
-        Reads ``OCTA_API_KEY``, ``OCTA_BASE_URL``, ``OCTA_BASE_URLS``
-        (comma-separated) and one variable per option, for example
+        Reads ``OCTA_API_KEY``, ``OCTA_API_URL`` (one host, or several
+        separated by commas) and one variable per option, for example
         ``OCTA_READ_TIMEOUT``. ``OCTA_LOGGER`` is the name of a logger.
+        ``OCTA_BASE_URL`` and ``OCTA_BASE_URLS`` are still read when
+        ``OCTA_API_URL`` is not set.
 
         Args:
             **overrides: Fields that take precedence over the environment.
@@ -133,13 +138,19 @@ class ClientConfig:
             ConfigurationError: A variable has an invalid value.
         """
         defaults = cls()
+        api_urls = [url.strip() for url in os.getenv("OCTA_API_URL", "").split(",") if url.strip()]
         base_urls = os.getenv("OCTA_BASE_URLS")
+        base_url = os.getenv("OCTA_BASE_URL", defaults.base_url)
+        url_list = [item.strip() for item in base_urls.split(",")] if base_urls else None
+        if api_urls:
+            base_url = api_urls[0]
+            url_list = api_urls if len(api_urls) > 1 else None
         logger_name = os.getenv("OCTA_LOGGER")
         logger = logging.getLogger(logger_name) if logger_name else None
         config = cls(
             api_key=os.getenv("OCTA_API_KEY"),
-            base_url=os.getenv("OCTA_BASE_URL", defaults.base_url),
-            base_urls=[item.strip() for item in base_urls.split(",")] if base_urls else None,
+            base_url=base_url,
+            base_urls=url_list,
             keep_alive=_env_bool(os.getenv("OCTA_KEEP_ALIVE"), defaults.keep_alive),
             pool_size=_env_number(int, "OCTA_POOL_SIZE", defaults.pool_size),
             max_connections=_env_number(int, "OCTA_MAX_CONNECTIONS", defaults.max_connections),

@@ -1,17 +1,29 @@
 from .accounts import AccountsResource
-from .apps import AppsResource
-from .idle_jobs import IdleJobsResource
-from .network import NetworkResource
-from .nodes import NodesResource
-from .services import ServicesResource
-from .sessions import SessionsResource
+from .compute import ComputeResource
+from .hosting import HostingResource
+from .network import NetworkResource, network_history_points
+from .render import RenderResource
+from .sessions import (
+    SessionsResource,
+    is_compute_session,
+    is_render_session,
+    is_vpn_session,
+)
+from .stats import StatsResource, gpu_history_points
+from .vpn import VpnResource
 
 __all__ = [
     "AccountsResource",
-    "AppsResource",
-    "IdleJobsResource",
+    "ComputeResource",
+    "HostingResource",
     "NetworkResource",
-    "NodesResource",
-    "ServicesResource",
+    "RenderResource",
     "SessionsResource",
+    "StatsResource",
+    "VpnResource",
+    "gpu_history_points",
+    "is_compute_session",
+    "is_render_session",
+    "is_vpn_session",
+    "network_history_points",
 ]

@@ -4,7 +4,7 @@ from typing import Any
 
 from .__about__ import __version__
 from .client import OctaSpaceClient
-from .config import ClientConfig
+from .config import DEFAULT_BASE_URL, ClientConfig
 from .errors import (
     APIConnectionError,
     APIError,
@@ -21,8 +21,19 @@ from .errors import (
     RateLimitError,
     ServerError,
     ServiceUnavailableError,
+    SessionStoppedError,
     ValidationError,
+    WaitTimeoutError,
 )
+from .money import MICRO_USD_PER_USD, format_usd, micro_usd_to_usd, usd_to_micro_usd
+from .resources import (
+    gpu_history_points,
+    is_compute_session,
+    is_render_session,
+    is_vpn_session,
+    network_history_points,
+)
+from .response import APIResponse, RateLimit
 
 _configuration = ClientConfig()
 _shared_client: OctaSpaceClient | None = None
@@ -85,9 +96,12 @@ def shutdown_shared_client() -> None:
 
 
 __all__ = [
+    "DEFAULT_BASE_URL",
+    "MICRO_USD_PER_USD",
     "APIConnectionError",
     "APIError",
     "APIPermissionError",
+    "APIResponse",
     "APITimeoutError",
     "AuthenticationError",
     "BadGatewayError",
@@ -99,14 +113,25 @@ __all__ = [
     "NotFoundError",
     "OctaSpaceClient",
     "OctaSpaceError",
+    "RateLimit",
     "RateLimitError",
     "ServerError",
     "ServiceUnavailableError",
+    "SessionStoppedError",
     "ValidationError",
+    "WaitTimeoutError",
     "__version__",
     "client",
     "configuration",
     "configure",
+    "format_usd",
+    "gpu_history_points",
+    "is_compute_session",
+    "is_render_session",
+    "is_vpn_session",
+    "micro_usd_to_usd",
+    "network_history_points",
     "reset_configuration",
     "shutdown_shared_client",
+    "usd_to_micro_usd",
 ]

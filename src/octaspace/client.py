@@ -7,29 +7,42 @@ from ._transport.httpx_transport import HttpxTransport
 from .config import ClientConfig
 from .resources import (
     AccountsResource,
-    AppsResource,
-    IdleJobsResource,
+    ComputeResource,
+    HostingResource,
     NetworkResource,
-    NodesResource,
-    ServicesResource,
+    RenderResource,
     SessionsResource,
+    StatsResource,
+    VpnResource,
 )
+from .response import RateLimit
 
 
 class OctaSpaceClient:
     """Client of the OctaSpace API.
 
     Args:
-        api_key: The API token of your account (Account → Credentials →
-            API Token). Without it, only the calls that need no token work.
-        transport: A custom transport, for example
-            ``octaspace._transport.mock_transport.MockTransport`` in tests.
+        api_key: An API key of your OctaSpace account (``octa_ak_…``), created
+            in the dashboard under Account → Credentials → API Keys. Sent as
+            ``Authorization: Bearer <key>``. Without it, only the calls that
+            need no key work.
+        transport: A custom transport, for tests.
         config: Base configuration; ``api_key`` and ``**overrides`` take
             precedence over it.
         **overrides: Any ``ClientConfig`` field, such as ``read_timeout``.
 
     Raises:
         ConfigurationError: An option is unknown or invalid.
+
+    Attributes:
+        accounts: Balance.
+        compute: Machines and apps: list, apps, start, start_batch, restart.
+        render: Render nodes: list, start, start_batch.
+        vpn: VPN nodes: list, start.
+        sessions: Running sessions: list, get, logs, stop, wait_ready, wait_stopped.
+        hosting: Your nodes: nodes, get, set_prices, start_maintenance, end_maintenance.
+        network: Platform statistics: info, history.
+        stats: GPU market and mining: gpu_current, gpu_history, gpu_locations, mining.
 
     Use the client as a context manager, or call ``close()`` when done.
     """
@@ -45,17 +58,23 @@ class OctaSpaceClient:
         self._config = self._build_config(api_key, config, overrides)
         self._transport = transport if transport is not None else HttpxTransport(self._config)
         self.accounts = AccountsResource(self._transport)
-        self.nodes = NodesResource(self._transport)
+        self.compute = ComputeResource(self._transport)
+        self.render = RenderResource(self._transport)
+        self.vpn = VpnResource(self._transport)
         self.sessions = SessionsResource(self._transport)
-        self.apps = AppsResource(self._transport)
+        self.hosting = HostingResource(self._transport)
         self.network = NetworkResource(self._transport)
-        self.services = ServicesResource(self._transport)
-        self.idle_jobs = IdleJobsResource(self._transport)
+        self.stats = StatsResource(self._transport)
 
     @property
     def config(self) -> ClientConfig:
         """The configuration of this client."""
         return self._config
+
+    @property
+    def rate_limit(self) -> RateLimit | None:
+        """The rate limit state of the latest response that carried it, or ``None``."""
+        return self._transport.rate_limit
 
     def close(self) -> None:
         """Close the client's connections."""

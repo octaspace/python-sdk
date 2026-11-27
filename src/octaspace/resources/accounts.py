@@ -1,31 +1,19 @@
 from __future__ import annotations
 
-from ..response import APIResponse
+from typing import cast
+
+from ..types import AccountBalance
 from .base import Resource
 
 
 class AccountsResource(Resource):
-    """Your OctaSpace account: profile, balance and deposit wallet."""
+    """The account the API key belongs to."""
 
-    def profile(self) -> APIResponse:
-        """Return the account profile.
+    def balance(self) -> AccountBalance:
+        """Return the account balance (``GET /accounts/balance``).
 
-        ``GET /accounts``. The data includes ``account_uuid``, ``email``, ``uid``,
-        ``wallet`` and ``balance`` (in Wei).
+        ``balance`` is in micro-USD; format it with ``octaspace.format_usd()``.
+        It already includes what running sessions have used and can be
+        negative. Also a quick way to check that an API key works.
         """
-        return self.get("/accounts")
-
-    def balance(self) -> APIResponse:
-        """Return the account balance.
-
-        ``GET /accounts/balance``. ``data["balance"]`` is an integer in Wei;
-        1 OCTA is 10**18 Wei.
-        """
-        return self.get("/accounts/balance")
-
-    def generate_wallet(self) -> APIResponse:
-        """Generate the deposit wallet of the account.
-
-        ``POST /accounts``. ``data["address"]`` is the wallet address.
-        """
-        return self.post("/accounts")
+        return cast(AccountBalance, self._request("GET", "/accounts/balance"))

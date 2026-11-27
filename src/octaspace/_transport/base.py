@@ -1,11 +1,21 @@
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
-from ..response import APIResponse
+from ..response import APIResponse, RateLimit
+
+AuthMode = Literal["required", "optional", "none"]
+"""How a request authenticates.
+
+- ``required``: sends the API key; raises ``AuthenticationError`` before sending without one.
+- ``optional``: sends the API key when the client has one.
+- ``none``: never sends the API key.
+"""
 
 
 class BaseTransport(Protocol):
+    """Sends requests to the API; the client's resources use it."""
+
     def request(
         self,
         method: str,
@@ -13,48 +23,12 @@ class BaseTransport(Protocol):
         *,
         params: dict[str, Any] | None = None,
         body: Any = None,
-        headers: dict[str, str] | None = None,
+        auth: AuthMode = "required",
+        idempotent: bool = False,
     ) -> APIResponse: ...
 
-    def get(
-        self,
-        path: str,
-        *,
-        params: dict[str, Any] | None = None,
-        headers: dict[str, str] | None = None,
-    ) -> APIResponse: ...
-
-    def post(
-        self,
-        path: str,
-        *,
-        body: Any = None,
-        headers: dict[str, str] | None = None,
-    ) -> APIResponse: ...
-
-    def put(
-        self,
-        path: str,
-        *,
-        body: Any = None,
-        headers: dict[str, str] | None = None,
-    ) -> APIResponse: ...
-
-    def patch(
-        self,
-        path: str,
-        *,
-        body: Any = None,
-        headers: dict[str, str] | None = None,
-    ) -> APIResponse: ...
-
-    def delete(
-        self,
-        path: str,
-        *,
-        params: dict[str, Any] | None = None,
-        headers: dict[str, str] | None = None,
-    ) -> APIResponse: ...
+    @property
+    def rate_limit(self) -> RateLimit | None: ...
 
     def close(self) -> None: ...
 
